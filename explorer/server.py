@@ -41,6 +41,13 @@ app = FastAPI()
 # the API, which runs the model and a Claude agent with a shell. Links from elsewhere still open pages (a top-level GET
 # navigation, whose response the linking site can't read).
 LOCAL_HOSTS = {f"localhost:{PORT}", f"127.0.0.1:{PORT}", f"[::1]:{PORT}"}
+# opt-in: one more address to listen on as well, e.g. this machine's Tailscale IP. Everyone who can reach it gets the
+# whole API, the agent's shell included, so give it a private network's address, never 0.0.0.0.
+HOST = os.environ.get("EXPLORER_HOST", "").strip()
+if HOST in ("0.0.0.0", "::"):
+    sys.exit("EXPLORER_HOST takes one interface's address (e.g. a Tailscale IP), not every interface")
+if HOST:
+    LOCAL_HOSTS.add(f"[{HOST}]:{PORT}" if ":" in HOST else f"{HOST}:{PORT}")
 
 
 @app.middleware("http")
@@ -1926,5 +1933,14 @@ def preload():
 
 
 if __name__ == "__main__":
-    # chat event streams stay open indefinitely; on shutdown, close them after a few seconds instead of waiting
-    uvicorn.run(app, host="127.0.0.1", port=PORT, timeout_graceful_shutdown=3)
+    if not HOST:
+        uvicorn.run(app, host="127.0.0.1", port=PORT, timeout_graceful_shutdown=3)
+    else:  # loopback too: the agent's MCP server and local pages keep using 127.0.0.1
+        import socket
+        socks = []
+        for h in ("127.0.0.1", HOST):
+            s = socket.socket(socket.AF_INET6 if ":" in h else socket.AF_INET)
+            s.bind((h, PORT))
+            socks.append(s)
+        print(f"also listening on http://{f'[{HOST}]' if ':' in HOST else HOST}:{PORT}")
+        uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=PORT, timeout_graceful_shutdown=3)).run(sockets=socks)

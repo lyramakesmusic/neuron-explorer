@@ -14,6 +14,9 @@ Reads sweep runs from `runs/` and per-layer stats from `stats/`, both produced b
 `explorer/cache/` ship with the repo. Loads Qwen3.5-4B locally (MPS, CUDA or CPU) for live
 steered chat, lens, connections and live inference over your own text.
 
+`EXPLORER_HOST=<address>` also serves on one more address, such as this machine's Tailscale IP.
+Whoever reaches it gets the whole API, including the agent's shell; use a trusted private interface.
+
 The R and J++ lens rows read the maps of [bubskee/qwen3.5-4b-r-jpp-lenses](https://huggingface.co/bubskee/qwen3.5-4b-r-jpp-lenses)
 (Apache-2.0):
 

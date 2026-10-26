@@ -7,8 +7,18 @@ import builtins
 import glob
 import json
 import os
+import shutil
 import sys
 import threading
+
+# the files here are UTF-8 and Windows would open them as cp1252: rerun in UTF-8 mode, which the agent's MCP server
+# and other Python children inherit through the environment
+if os.name == "nt" and not sys.flags.utf8_mode and __name__ == "__main__":
+    import subprocess
+    try:
+        sys.exit(subprocess.call([sys.executable, *sys.argv], env={**os.environ, "PYTHONUTF8": "1"}))
+    except KeyboardInterrupt:
+        sys.exit(130)
 
 import numpy as np
 import uvicorn
@@ -1302,6 +1312,12 @@ async def _stop_turn(proc):
     import signal
     if proc is None or proc.returncode is not None:
         return
+    if os.name == "nt":  # no process groups: end the tree
+        tk = await asyncio.create_subprocess_exec("taskkill", "/T", "/F", "/PID", str(proc.pid),
+                                                  stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+        await tk.wait()
+        await proc.wait()
+        return
     for sig in (signal.SIGTERM, signal.SIGKILL):
         try:
             os.killpg(proc.pid, sig)
@@ -1361,7 +1377,7 @@ def _shown_text(t):
     return re.sub(r"^\[The person has [^\]]*\]\n\n", "", t)
 
 
-AGENT_SESSIONS = os.path.join(os.path.expanduser("~/.claude/projects"), AGENT_DIR.replace("/", "-").replace(".", "-"))
+AGENT_SESSIONS = os.path.join(os.path.expanduser("~/.claude/projects"), __import__("re").sub(r"[^A-Za-z0-9]", "-", AGENT_DIR))
 _chat_list = {}  # path -> (mtime, summary)
 
 
@@ -1727,7 +1743,7 @@ async def _ensure_codex(c):
         return proc
     os.makedirs(AGENT_DIR, exist_ok=True)
     env = {**os.environ, "CODEX_HOME": _codex_home()}
-    proc = c["proc"] = await asyncio.create_subprocess_exec("codex", "app-server", cwd=AGENT_DIR, env=env, stdin=asyncio.subprocess.PIPE,
+    proc = c["proc"] = await asyncio.create_subprocess_exec(shutil.which("codex") or "codex", "app-server", cwd=AGENT_DIR, env=env, stdin=asyncio.subprocess.PIPE,
                                                             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
                                                             limit=1 << 24, start_new_session=True)
     c["rpc"] = {"next": 0, "pending": {}}

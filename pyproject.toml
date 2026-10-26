@@ -14,3 +14,12 @@ dependencies = [
     "sentence-transformers>=6.1.0",
     "umap-learn>=0.5.12",
 ]
+
+# Windows has no CUDA wheels on PyPI; take torch from the CUDA 13.0 index (Blackwell / sm_120 included)
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu130", marker = "sys_platform == 'win32'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true

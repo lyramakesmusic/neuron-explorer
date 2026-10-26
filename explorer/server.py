@@ -1,6 +1,7 @@
 """Neuron explorer server: sweep data, names, embeddings, and the live model.
 
     uv run python explorer/server.py            # http://localhost:8791
+    HOST=100.x.y.z uv run python explorer/server.py   # also listen on that address
 """
 import asyncio
 import builtins
@@ -26,6 +27,8 @@ from runtime import NO_MODEL, Runtime  # noqa: E402
 RUNS, STATS = os.path.join(ROOT, "runs"), os.path.join(ROOT, "stats")
 NAMES = os.path.join(ROOT, "explorer", "names.json")
 PORT = int(os.environ.get("PORT", 8791))
+# IPv4 addresses to listen on besides loopback, comma-separated, e.g. HOST=100.x.y.z for a Tailscale address
+EXTRA_HOSTS = [h.strip() for h in os.environ.get("HOST", "").split(",") if h.strip()]
 _cfg = AutoConfig.from_pretrained("Qwen/Qwen3.5-4B").get_text_config()
 ARCH = {"n_layers": _cfg.num_hidden_layers, "hidden": _cfg.hidden_size, "inter": _cfg.intermediate_size,
         "layer_types": list(_cfg.layer_types), "attn_heads": _cfg.num_attention_heads,
@@ -35,9 +38,9 @@ ARCH = {"n_layers": _cfg.num_hidden_layers, "hidden": _cfg.hidden_size, "inter":
 app = FastAPI()
 
 
-# only this machine's own pages and tools: a page on another site (or a DNS name rebound to 127.0.0.1) can't reach
-# the API, which runs the model and a Claude agent with a shell
-LOCAL_HOSTS = {f"localhost:{PORT}", f"127.0.0.1:{PORT}", f"[::1]:{PORT}"}
+# only this machine's own pages and tools (plus the HOST addresses): a page on another site (or a DNS name rebound to
+# 127.0.0.1) can't reach the API, which runs the model and a Claude agent with a shell
+LOCAL_HOSTS = {f"localhost:{PORT}", f"127.0.0.1:{PORT}", f"[::1]:{PORT}"} | {f"{h}:{PORT}" for h in EXTRA_HOSTS}
 
 
 @app.middleware("http")
@@ -1072,4 +1075,12 @@ def preload():
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=PORT)
+    import socket
+    # loopback always, since the agent's tools reach this server at 127.0.0.1
+    socks = []
+    for h in ["127.0.0.1", *EXTRA_HOSTS]:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind((h, PORT))
+        socks.append(s)
+        print(f"listening on http://{h}:{PORT}", flush=True)
+    uvicorn.Server(uvicorn.Config(app)).run(sockets=socks)

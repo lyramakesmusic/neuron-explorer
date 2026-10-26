@@ -199,7 +199,15 @@ body.list-hidden #layer-back { left: 56px; }
 #tab-chat.reads #c-reads { flex: 1; overflow-y: auto; }
 #c-form { display: block; margin: 10px 0 0; }
 #c-form .row { display: flex; gap: 8px; margin-top: 8px; }
-#c-clear { margin-left: auto; font-size: 13px; }
+#c-clear { font-size: 13px; }
+#c-pin { margin-left: auto; font-size: 13px; }
+#c-pins { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 8px; font: 12px var(--mono); }
+#tab-chat.reads #c-pins, #tab-chat.reads #c-pin { display: none; }
+#c-pins .pin { display: inline-flex; background: var(--raise); border-radius: 4px; }
+#c-pins .pin button { padding: 3px 4px 3px 8px; color: var(--ink); }
+#c-pins .pin button.x { padding: 3px 7px 3px 4px; color: var(--dim); }
+#c-pins .pin.self button.go { color: var(--faint); text-decoration: line-through; }
+#c-pin-add { width: 12em; padding: 3px 8px; font: inherit; }
 .turn { margin-bottom: 18px; }
 .turn .user { margin: 0 0 10px auto; max-width: 80%; width: fit-content; background: var(--raise); border-radius: 6px;
   padding: 7px 11px; white-space: pre-wrap; }

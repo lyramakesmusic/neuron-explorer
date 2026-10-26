@@ -649,7 +649,7 @@ async function openNeuron(layer, n, kind = "neuron", push = true, fly = true) {
   setNameField(state.unitMap[layer]?.get(n)?.name || "");
   $("#f-name").disabled = kind !== "neuron";
   $("#tab-examples").innerHTML = ""; $("#tab-details").innerHTML = "";
-  state.thread = []; renderThread(); $("#c-reads").innerHTML = ""; $("#c-lens").innerHTML = "";
+  state.thread = []; renderThread(); renderPins(); $("#c-reads").innerHTML = ""; $("#c-lens").innerHTML = "";
   syncTabs();
   if (layer !== state.layer) await setLayer(layer);
   if (!isFocus(layer, n, kind)) return;
@@ -875,8 +875,8 @@ $("#f-name").addEventListener("input", () => {
 const doseEl = $("#c-dose");
 function showDose() { doseEl.value = state.chat.mode === "mul" ? `×${state.chat.dose.mul}` : state.chat.dose.add; }
 doseEl.addEventListener("change", () => {
-  const v = parseFloat(doseEl.value.replace(/[×x*]/g, ""));
-  if (Number.isFinite(v) && v >= 0) state.chat.dose[state.chat.mode] = v;
+  const v = parseFloat(doseEl.value.replace(/[×x*]/g, "").replace("−", "-"));
+  if (Number.isFinite(v) && (v >= 0 || state.chat.mode === "add")) state.chat.dose[state.chat.mode] = v;
   showDose();
 });
 document.querySelectorAll("#c-mode button").forEach(b => b.onclick = () => {
@@ -890,7 +890,7 @@ document.querySelectorAll("#c-dir button").forEach(b => b.onclick = () => {
   syncPlaceholders();
 });
 function step(dir) {
-  const steps = state.chat.mode === "mul" ? MUL_STEPS : ADD_STEPS, key = state.chat.mode;
+  const steps = state.chat.mode === "mul" ? MUL_STEPS : [...ADD_STEPS].reverse().map(x => -x).concat(ADD_STEPS), key = state.chat.mode;
   // step to the next value in the ladder above or below the current dose (typed values land between steps)
   const v = state.chat.dose[key];
   const next = dir > 0 ? steps.find(x => x > v + 1e-9) : [...steps].reverse().find(x => x < v - 1e-9);
@@ -903,13 +903,55 @@ showDose();
 let running = null;
 state.thread = [];
 const ROWS = ["up", "zero", "down"];
+// pins: neurons steered alongside the open one in every turn, each at the dose and mode it was pinned with (kept in
+// this browser). The open neuron itself always takes the stepper's dose, so its own pin is skipped while it's open.
+state.chat.pins = [];
+try { state.chat.pins = JSON.parse(localStorage.getItem("ne.pins")) || []; } catch {}
+const isOpen = p => state.focus?.kind === "neuron" && p.layer === state.focus.layer && p.n === state.focus.n;
+const pinDose = p => p.mode === "mul" ? `×${p.dose}` : fmtDose(p.dose);
+function extraPins() { return state.chat.pins.filter(p => !isOpen(p)); }
+function renderPins() {
+  try { localStorage.setItem("ne.pins", JSON.stringify(state.chat.pins)); } catch {}
+  $("#c-pin").textContent = state.chat.pins.some(isOpen) ? "unpin" : "pin";
+  $("#c-pin-list").innerHTML = state.chat.pins.map((p, i) => {
+    const name = state.unitMap[p.layer]?.get(p.n)?.name;
+    const title = isOpen(p) ? "open: steered at the dose above" : `open L${p.layer} N${p.n}${name ? ` · ${name}` : ""}`;
+    return `<span class="pin${isOpen(p) ? " self" : ""}" data-i="${i}"><button type="button" class="go" title="${esc(title)}">L${p.layer} N${p.n} ${pinDose(p)}</button><button type="button" class="x" aria-label="unpin">×</button></span>`;
+  }).join("");
+}
+function addPin(layer, n, dose, mode = state.chat.mode) {
+  if (!(layer >= 0 && layer < arch.n_layers && n >= 0 && n < arch.inter)) return false;
+  dose ??= mode === "mul" ? state.chat.dose.mul : state.chat.dose.add;
+  if (!Number.isFinite(dose) || (mode === "mul" && dose < 0)) return false;
+  state.chat.pins = state.chat.pins.filter(p => !(p.layer === layer && p.n === n)).concat({ layer, n, dose, mode });
+  renderPins(); return true;
+}
+$("#c-pin").onclick = () => {
+  const f = state.focus; if (!f || f.kind !== "neuron") return;
+  if (state.chat.pins.some(isOpen)) { state.chat.pins = state.chat.pins.filter(p => !isOpen(p)); renderPins(); }
+  else addPin(f.layer, f.n);
+};
+$("#c-pin-list").addEventListener("click", e => {
+  const el = e.target.closest(".pin"); if (!el) return;
+  const p = state.chat.pins[+el.dataset.i];
+  if (e.target.closest(".x")) { state.chat.pins.splice(+el.dataset.i, 1); renderPins(); }
+  else if (!isOpen(p)) goToNeuron(p.layer, p.n);
+});
+$("#c-pin-add").addEventListener("keydown", e => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  const m = e.target.value.replace("−", "-").match(/^\s*L?\s*(\d+)\s*(?:[\s:\/,.]+\s*N?|N)\s*(\d+)(?:\s+(?:([×x*])\s*)?([+-]?\d*\.?\d+))?\s*$/i);
+  if (m && addPin(+m[1], +m[2], m[4] === undefined ? undefined : +m[4], m[3] ? "mul" : m[4] === undefined ? undefined : "add")) e.target.value = "";
+});
+renderPins();
+
 function turnLabels(t) {
-  return t.mode === "mul" ? [`▲ ×${t.dose}`, "×1", `▼ ×−${t.dose}`] : [`▲ +${t.dose}`, "0", `▼ −${t.dose}`];
+  return t.mode === "mul" ? [`▲ ×${t.dose}`, "×1", `▼ ×−${t.dose}`] : [`▲ ${fmtDose(t.dose)}`, "0", `▼ ${fmtDose(-t.dose)}`];
 }
 function renderThread() {
   const el = $("#c-thread");
   el.innerHTML = state.thread.map((turn, i) => `<div class="turn" data-i="${i}">
-    <div class="user">${esc(turn.user)}<span class="recipe">${turn.mode === "mul" ? "×" : t("chat.add")} ${turn.dose}</span></div>
+    <div class="user">${esc(turn.user)}<span class="recipe">${turn.mode === "mul" ? "×" : t("chat.add")} ${turn.dose}${(turn.pins || []).map(p => ` + L${p.layer} N${p.n} ${pinDose(p)}`).join("")}</span></div>
     <div class="cols">${ROWS.map((c, r) => `<div class="col ${c}${turn.live && !turn.done[r] ? " live" : ""}"><span class="lab">${turnLabels(turn)[r]}</span>${esc(turn.replies[r])}</div>`).join("")}
     ${turn.error ? `<div class="err err-raw" data-raw="${esc(turn.error)}">${esc(localizeError(turn.error))}</div>` : ""}</div></div>`).join("");
   el.scrollTop = el.scrollHeight;
@@ -925,14 +967,15 @@ $("#c-form").addEventListener("submit", async e => {
   if (state.chat.dir === "reads") return runReads(f, text);
   const dose = state.chat.mode === "mul" ? state.chat.dose.mul : state.chat.dose.add;
   const history = state.thread.filter(t => !t.error).map(t => ({ user: t.user, replies: t.replies }));
-  const turn = { user: text, replies: ["", "", ""], done: [false, false, false], dose, mode: state.chat.mode, live: true };
+  const pins = extraPins();
+  const turn = { user: text, replies: ["", "", ""], done: [false, false, false], dose, mode: state.chat.mode, pins, live: true };
   state.thread.push(turn); $("#c-input").value = ""; renderThread();
   const cols = [...$("#c-thread").lastElementChild.querySelectorAll(".col")];
   const ctl = new AbortController(), thread = state.thread;
   running = ctl; $("#c-go").textContent = t("chat.stop");
   try {
     const res = await fetch("/api/steer", { method: "POST", headers: { "Content-Type": "application/json" }, signal: ctl.signal,
-      body: JSON.stringify({ layer: f.layer, n: f.n, prompt: text, dose, mode: state.chat.mode, history }) });
+      body: JSON.stringify({ layer: f.layer, n: f.n, prompt: text, dose, mode: state.chat.mode, neurons: pins, history }) });
     if (!res.ok) throw new Error(`${res.status}: ${(await res.text()).slice(0, 160)}`);
     const reader = res.body.getReader(), dec = new TextDecoder();
     let buf = "";

@@ -92,8 +92,10 @@
           <span class="seg" id="c-mode"><button type="button" data-m="add" class="on" data-i18n="chat.add">add</button><button type="button" data-m="mul">×</button></span>
           <span class="seg" id="c-dir"><button type="button" data-d="writes" class="on" data-i18n="chat.writes">writes</button><button type="button" data-d="reads" data-i18n="chat.reads">reads you</button></span>
           <span class="stepper"><button type="button" id="c-minus" aria-label="smaller" data-i18n-aria-label="chat.smaller">−</button><input id="c-dose" class="mono" inputmode="decimal" aria-label="dose" value="0.8" data-i18n-aria-label="chat.dose"><button type="button" id="c-plus" aria-label="larger" data-i18n-aria-label="chat.larger">+</button></span>
+          <button type="button" id="c-pin" class="dim" title="steer this neuron, at this dose, alongside whichever neuron is open">pin</button>
           <button type="button" id="c-clear" class="dim" data-i18n="chat.clear">clear</button>
         </div>
+        <div id="c-pins"><span id="c-pin-list"></span><input id="c-pin-add" class="mono" placeholder="+ L17 N567 -0.5" autocomplete="off" aria-label="pin a neuron" title="pin a neuron by id, with a dose (-0.5, ×2) or at the dose above; Enter adds"></div>
         <div class="row"><input id="c-input" placeholder="Who are you?" aria-label="Who are you?" autocomplete="off" data-i18n-placeholder="chat.who" data-i18n-aria-label="chat.who"><button id="c-go" type="submit" data-i18n="chat.run">run</button></div>
       </form>
     </div>

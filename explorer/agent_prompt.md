@@ -204,7 +204,7 @@ endpoints, all POST unless noted:
   up: {fed_by, held_by}}` lists of `{tok, n, w}`, `/api/agent/cone?layer=&n=` (same as the `cone` tool).
 - With the live model off, the POST endpoints return `{error: "..."}` instead.
 
-The project's Python is `{ROOT}/.venv/bin/python` (numpy, transformers; the Qwen3.5-4B tokenizer
+The project's Python is `{PYTHON}` (quote it if the path has spaces; numpy, transformers; the Qwen3.5-4B tokenizer
 loads offline with `HF_HUB_OFFLINE=1` and `AutoTokenizer.from_pretrained("Qwen/Qwen3.5-4B")`, with offset mapping for
 character positions). When the person asks you not to read a file's text, write a script that reads it, calls the API
 and prints only numbers or summaries, and run that; never print the text itself.

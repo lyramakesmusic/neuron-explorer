@@ -37,6 +37,8 @@ RUNS, STATS = os.path.join(ROOT, "runs"), os.path.join(ROOT, "stats")
 # the agent's neuronary.org tools (agent_mcp.py) read the person's token from here when set
 NEURONARY_ENV = {k: os.environ[k] for k in ("NEURONARY_TOKEN", "NEURONARY_API") if os.environ.get(k)}
 NAMES = os.path.join(ROOT, "explorer", "names.json")
+# the project's interpreter (.venv/bin/python, or .venv/Scripts/python.exe on Windows), named in the agent's prompt
+PYTHON = sys.executable.replace("\\", "/")
 PORT = int(os.environ.get("PORT", 8791))
 _cfg = AutoConfig.from_pretrained(MODEL).get_text_config()
 ARCH = {"n_layers": _cfg.num_hidden_layers, "hidden": _cfg.hidden_size, "inter": _cfg.intermediate_size,
@@ -1292,12 +1294,12 @@ AGENT_LOCAL = os.path.join(ROOT, "explorer", "agent_prompt.local.md")  # this ma
 
 def agent_prompt_file():
     """agent_prompt.md, then agent_methodology.md and agent_prompt.local.md when present, with {ROOT} filled in as
-    this checkout's path, written beside the chat's working files."""
+    this checkout's path and {PYTHON} as this server's interpreter, written beside the chat's working files."""
     text = open(AGENT_PROMPT).read()
     for extra in (AGENT_METHOD, AGENT_LOCAL):
         if os.path.exists(extra):
             text = text.rstrip() + "\n\n" + open(extra).read()
-    text = text.replace("{ROOT}", ROOT)
+    text = text.replace("{ROOT}", ROOT).replace("{PYTHON}", PYTHON)
     out = os.path.join(AGENT_DIR, "system_prompt.md")
     if not os.path.exists(out) or open(out).read() != text:
         if os.path.exists(out):
@@ -1649,7 +1651,7 @@ CODEX_NOTE = """
 
 You are running as Codex. Your shell and file editing are Codex's own: where these instructions name Read, Glob,
 Grep, Write, Edit or Bash, use your shell and apply_patch. Start anything that runs longer than about a minute
-detached (`nohup {ROOT}/.venv/bin/python script.py > script.log 2>&1 &`), say where the log is, and end your reply;
+detached (`nohup "{PYTHON}" script.py > script.log 2>&1 &`), say where the log is, and end your reply;
 read the log in a later turn."""
 
 
@@ -1752,7 +1754,7 @@ async def _ensure_codex(c):
     mcp = {"explorer": {"command": sys.executable, "args": [os.path.join(ROOT, "explorer", "agent_mcp.py")],
                         "env": {"EXPLORER_URL": f"http://127.0.0.1:{PORT}", "EXPLORER_CHAT": c["session"], **NEURONARY_ENV}}}
     opts = {"cwd": AGENT_DIR, "approvalPolicy": "never", "sandbox": "danger-full-access", "config": {"mcp_servers": mcp},
-            "developerInstructions": open(agent_prompt_file()).read() + CODEX_NOTE.replace("{ROOT}", ROOT)}
+            "developerInstructions": open(agent_prompt_file()).read() + CODEX_NOTE.replace("{ROOT}", ROOT).replace("{PYTHON}", PYTHON)}
     thread = _meta().get(c["session"], {}).get("thread")
     r = await _rpc(c, "thread/resume", {"threadId": thread, **opts}) if thread else await _rpc(c, "thread/start", opts)
     c["thread"] = r["thread"]["id"]

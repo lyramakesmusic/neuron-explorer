@@ -10,6 +10,9 @@ rollout is kept, and the explorer lays the results out over a 3D view of the mod
     uv sync
     uv run python explorer/server.py        # http://localhost:8791
 
+On Windows, double-click `start.bat` instead: it runs the same server, also on this machine's Tailscale IP when
+Tailscale is up.
+
 Reads sweep runs from `runs/` and per-layer stats from `stats/`, both produced by the sweep below; the caches in
 `explorer/cache/` ship with the repo. Loads Qwen3.5-4B locally (MPS, CUDA or CPU) for live
 steered chat, lens, connections and live inference over your own text.

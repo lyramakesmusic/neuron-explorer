@@ -1158,7 +1158,9 @@ function addMsg(cls, html) {
 // ---- the chat: one claude process per chat on the server and one event stream here. Messages go in any time:
 // mid-reply they reach Claude between tool calls. Stop ends the reply only; background work keeps running and
 // reports back in a turn of its own, which renders like any other. ----
-function ensureChatId() { if (!agent.chat) agent.chat = crypto.randomUUID(); return agent.chat; }
+// a v4 uuid (it becomes claude's session id); crypto.randomUUID exists only on secure origins, not http over Tailscale
+const uuid = () => crypto.randomUUID?.() ?? ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16));
+function ensureChatId() { if (!agent.chat) agent.chat = uuid(); return agent.chat; }
 let evCtl = null, evChat = null;
 async function openEvents() {
   const chat = agent.chat; if (!chat || (evCtl && evChat === chat)) return;

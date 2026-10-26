@@ -1922,6 +1922,9 @@ def preload():
         rt.vocab_strings()
         if not os.path.exists(ACT_SCALE):
             rt.build_act_scale(ACT_SCALE)
+        # the heads' read / write / query / key bases, a few seconds to build, else paid on the first neuron opened
+        rt._head_bases()
+        rt._qk_bases()
     threading.Thread(target=go, daemon=True).start()
 
 

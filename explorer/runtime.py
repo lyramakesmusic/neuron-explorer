@@ -13,7 +13,7 @@ import threading
 import numpy as np
 import torch
 import torch.nn.functional as F
-from transformers import AutoTokenizer, Qwen3_5ForConditionalGeneration
+from transformers import AutoTokenizer, Qwen3_5ForConditionalGeneration, StaticCache
 from transformers.models.qwen3_5.modeling_qwen3_5 import apply_rotary_pos_emb, l2norm
 
 MODEL = os.environ.get("EXPLORER_MODEL", "Qwen/Qwen3.5-4B")
@@ -377,16 +377,16 @@ class Runtime:
                 WQ = a.in_proj_qkv.weight[kh * kd:(kh + 1) * kd].float() * g
                 WK = a.in_proj_qkv.weight[a.key_dim + kh * kd:a.key_dim + (kh + 1) * kd].float() * g
             # orthonormal bases of the read and write spaces, so a share is a plain projection length
-            QV = torch.linalg.qr(WV.T.cpu())[0].to(WV.device)  # [hidden, hd]
-            QO = torch.linalg.qr(WO.cpu())[0].to(WO.device)
+            QV = self._qr(WV.T).to(WV.device)  # [hidden, hd]
+            QO = self._qr(WO).to(WO.device)
             def top(scores):
                 s = torch.cat(scores)
                 z = (s - s.mean()) / (s.std() + 1e-8)
                 t = z.topk(k)
                 N = scores[0].numel()
                 return t.values.tolist(), t.indices.tolist(), N
-            QQ = torch.linalg.qr(WQ.T.cpu())[0].to(WQ.device)
-            QK = torch.linalg.qr(WK.T.cpu())[0].to(WK.device)
+            QQ = self._qr(WQ.T).to(WQ.device)
+            QK = self._qr(WK.T).to(WK.device)
             reads, rq, rk, wr = [], [], [], []
             for l in range(layer):
                 D = self.lm.layers[l].mlp.down_proj.weight.float()  # [hidden, N]
@@ -412,11 +412,16 @@ class Runtime:
             self._db.commit()
         return out
 
+    @staticmethod
+    def _qr(M):
+        """Q of M's QR decomposition: on the GPU under CUDA, on the CPU otherwise (MPS has no QR)."""
+        return torch.linalg.qr(M if M.is_cuda else M.cpu())[0]
+
     @_locked
     def _head_bases(self):
         """Orthonormal bases of every head's read space (value rows after the pre-attention norm weight) and write
-        space (output columns, after the gated norm weight on linear layers), stacked: (QV [hidden, sum hd],
-        QO [hidden, sum hd], [(layer, head, start, end)])."""
+        space (output columns, after the gated norm weight on linear layers), stacked as float16 (as _qk_bases;
+        2.5 GB in float32): (QV [hidden, sum hd], QO [hidden, sum hd], [(layer, head, start, end)])."""
         if getattr(self, "_hb", None) is not None:
             return self._hb
         self.ensure_loaded()
@@ -435,7 +440,7 @@ class Runtime:
                               a.out_proj.weight[:, h * hd:(h + 1) * hd].float() * a.norm.weight.float())
                              for h in range(a.num_v_heads)]
                 for h, (WV, WO) in enumerate(heads):
-                    qv.append(torch.linalg.qr(WV.T.cpu())[0]); qo.append(torch.linalg.qr(WO.cpu())[0])
+                    qv.append(self._qr(WV.T).half()); qo.append(self._qr(WO).half())
                     spans.append((l, h, at, at + hd)); at += hd
         self._hb = (torch.cat(qv, 1).to(self.dev), torch.cat(qo, 1).to(self.dev), spans)
         return self._hb
@@ -452,8 +457,8 @@ class Runtime:
             d = me.mlp.down_proj.weight[:, n].float()
             w = 1.0 + me.post_attention_layernorm.weight.float()
             gr, ur = me.mlp.gate_proj.weight[n].float() * w, me.mlp.up_proj.weight[n].float() * w
-            pr = (QV.T @ d).cpu()  # projections of the down column on every head's read basis
-            pg, pu = (QO.T @ gr).cpu(), (QO.T @ ur).cpu()
+            pr = (QV.T @ d.half()).float().cpu()  # projections of the down column on every head's read basis
+            pg, pu = (QO.T @ gr.half()).float().cpu(), (QO.T @ ur.half()).float().cpu()
         dn, gn, un, hid = float(d.norm()), float(gr.norm()), float(ur.norm()), d.shape[0]
         reads, writes = [], []
         for l, h, a, b in spans:
@@ -501,7 +506,7 @@ class Runtime:
                         units = [(a.in_proj_qkv.weight[o + kh * hd:o + (kh + 1) * hd], list(range(kh * rep, (kh + 1) * rep)))
                                  for kh in range(a.num_k_heads)]
                     for W, hs in units:
-                        cols.append(torch.linalg.qr((W.float() * g).T.cpu())[0].half())
+                        cols.append(self._qr((W.float() * g).T).half())
                         spans.append((l, hs, at, at + W.shape[0])); at += W.shape[0]
                 out[role] = (torch.cat(cols, 1).to(self.dev), spans)
         self._qkb = out
@@ -617,12 +622,13 @@ class Runtime:
                         seen[r, torch.tensor(q, device=self.dev)] = True
                 self._push = push
                 with torch.inference_mode():
-                    out = self.model(input_ids=ids, attention_mask=mask, position_ids=pos, use_cache=True,
-                                     logits_to_keep=1)
-                    for _ in range(max_new):
+                    graphs = self.dev == "cuda" and os.environ.get("EXPLORER_CUDA_GRAPHS", "1") != "0"
+                    step = self._decode_graph(ids, mask, pos, max_new) if graphs else self._decode_eager(ids, mask, pos)
+                    logits = step(None)
+                    for i in range(max_new):
                         if cancel is not None and cancel.is_set():
                             break
-                        logits = out.logits[:, -1].float()
+                        logits = logits[:, -1].float()
                         if seen is not None:
                             pen = torch.where(logits > 0, logits / repetition_penalty, logits * repetition_penalty)
                             logits = torch.where(seen, pen, logits)
@@ -637,10 +643,9 @@ class Runtime:
                             nxt = logits.argmax(-1)
                         if seen is not None:
                             seen[torch.arange(3, device=self.dev), nxt] = True
-                        for r in range(3):
+                        for r, t in enumerate(nxt.tolist()):
                             if done[r]:
                                 continue
-                            t = int(nxt[r])
                             if t == eos:
                                 done[r] = True
                                 continue
@@ -649,15 +654,75 @@ class Runtime:
                             if not text.endswith("\ufffd"):
                                 yield r, text[len(sent[r]):]
                                 sent[r] = text
-                        if all(done):
+                        if all(done) or i == max_new - 1:
                             break
-                        mask = torch.cat([mask, torch.ones_like(mask[:, :1])], -1)
-                        pos = pos[:, -1:] + 1
-                        out = self.model(input_ids=nxt[:, None], attention_mask=mask, position_ids=pos,
-                                         past_key_values=out.past_key_values, use_cache=True, logits_to_keep=1)
+                        logits = step(nxt)
             finally:
                 self._push = None
         yield None, None
+
+    def _decode_eager(self, ids, mask, pos):
+        """A decode step function for steer_multi: step(None) runs the prompt, step(next tokens) one token per row;
+        each returns the last position's logits. The cache grows as it goes."""
+        st = {"mask": mask, "pos": pos, "cache": None}
+
+        def step(nxt):
+            if nxt is not None:
+                st["mask"] = torch.cat([st["mask"], torch.ones_like(st["mask"][:, :1])], -1)
+                st["pos"] = st["pos"][:, -1:] + 1
+            out = self.model(input_ids=ids if nxt is None else nxt[:, None], attention_mask=st["mask"],
+                             position_ids=st["pos"], past_key_values=st["cache"], use_cache=True, logits_to_keep=1)
+            st["cache"] = out.past_key_values
+            return out.logits
+        return step
+
+    def _decode_graph(self, ids, mask, pos, max_new):
+        """_decode_eager over a preallocated cache, with each token's step replayed from a CUDA graph. Run eagerly, a
+        step is ~1800 small kernel launches and the GPU mostly waits on them; replayed, it's one. The steering hooks
+        are recorded into the graph, so it is built per call (one eager step, then one capture)."""
+        T = ids.shape[1]
+        L = T + max_new
+        cache = StaticCache(config=self.model.config, max_cache_len=L)
+        # what the graph reads, at fixed addresses, rewritten in place before each replay
+        tok, step_pos = torch.zeros_like(ids[:, :1]), pos[:, -1:].clone()
+        attend = torch.zeros(ids.shape[0], 1, 1, L, dtype=torch.bool, device=self.dev)
+        attend[:, 0, 0, :T] = mask.bool()
+        masks = {"full_attention": attend, "linear_attention": None}  # precomputed: no mask building inside the graph
+        st = {"at": T, "graph": None}
+
+        def run():
+            return self.model(input_ids=tok, attention_mask=masks, position_ids=step_pos, past_key_values=cache,
+                              use_cache=True, logits_to_keep=1).logits
+
+        def step(nxt):
+            if nxt is None:
+                return self.model(input_ids=ids, attention_mask=mask, position_ids=pos, past_key_values=cache,
+                                  use_cache=True, logits_to_keep=1).logits
+            tok.copy_(nxt[:, None])
+            step_pos.add_(1)
+            attend[:, 0, 0, st["at"]] = True
+            st["at"] += 1
+            if st["graph"] is None:  # the first token runs eagerly on a side stream (warm-up), then the next is recorded
+                # one stream for good: cuBLAS keeps a 32 MB workspace per stream for the life of the process
+                side = self._side = getattr(self, "_side", None) or torch.cuda.Stream()
+                side.wait_stream(torch.cuda.current_stream())
+                with torch.cuda.stream(side):
+                    logits = run()
+                torch.cuda.current_stream().wait_stream(side)
+                try:
+                    g = torch.cuda.CUDAGraph()
+                    with torch.cuda.graph(g, capture_error_mode="thread_local"):
+                        st["logits"] = run()
+                    st["graph"] = g
+                except Exception as e:  # nothing ran during the failed capture: carry on eagerly over the same cache
+                    print(f"[runtime] CUDA graph capture failed, decoding eagerly: {e!r}")
+                    st["graph"] = False
+                return logits
+            if st["graph"] is False:
+                return run()
+            st["graph"].replay()
+            return st["logits"]
+        return step
 
     def token_units(self, ids):
         """Groups token ids into displayable units: byte-level pieces of one multi-byte character (emoji, CJK split

@@ -918,7 +918,13 @@ function renderPins() {
     const title = isOpen(p) ? "open: steered at the dose above" : `open L${p.layer} N${p.n}${name ? ` · ${name}` : ""}`;
     return `<span class="pin${isOpen(p) ? " self" : ""}" data-i="${i}"><button type="button" class="go" title="${esc(title)}">L${p.layer} N${p.n} ${pinDose(p)}</button><button type="button" class="x" aria-label="unpin">×</button></span>`;
   }).join("");
+  $("#c-pin-open").hidden = !state.chat.pins.length;
 }
+// the pins alone, in a window of their own (pinned.html): a snapshot of them as they are now
+$("#c-pin-open").onclick = () => {
+  const spec = state.chat.pins.map(p => `L${p.layer}N${p.n}=${p.mode === "mul" ? "x" : ""}${p.dose}`).join(";");
+  window.open(`pinned.html#${encodeURIComponent(spec)}`, "_blank");
+};
 function addPin(layer, n, dose, mode = state.chat.mode) {
   if (!(layer >= 0 && layer < arch.n_layers && n >= 0 && n < arch.inter)) return false;
   dose ??= mode === "mul" ? state.chat.dose.mul : state.chat.dose.add;

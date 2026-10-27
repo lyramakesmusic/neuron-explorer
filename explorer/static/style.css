@@ -208,6 +208,18 @@ body.list-hidden #layer-back { left: 56px; }
 #c-pins .pin button.x { padding: 3px 7px 3px 4px; color: var(--dim); }
 #c-pins .pin.self button.go { color: var(--faint); text-decoration: line-through; }
 #c-pin-add { width: 12em; padding: 3px 8px; font: inherit; }
+#c-pin-open { margin-left: auto; font-size: 13px; }
+#c-pin-open[hidden] { display: none; }
+/* pinned.html: one steered chat in a window of its own */
+#p-main { display: flex; flex-direction: column; height: 100%; max-width: 860px; margin: 0 auto; padding: 14px 16px; box-sizing: border-box; }
+#p-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; margin-bottom: 12px; }
+#p-recipe { font-size: 12px; color: var(--dim); }
+#p-clear { margin-left: auto; font-size: 13px; }
+#p-thread { flex: 1; overflow-y: auto; min-height: 0; padding-right: 4px; }
+#p-thread .col { margin-top: 2px; }
+#p-form { display: flex; gap: 8px; margin-top: 10px; }
+#p-input { flex: 1; padding: 8px 10px; }
+#p-go { background: var(--raise); padding: 0 16px; border-radius: 4px; min-width: 64px; }
 .turn { margin-bottom: 18px; }
 .turn .user { margin: 0 0 10px auto; max-width: 80%; width: fit-content; background: var(--raise); border-radius: 6px;
   padding: 7px 11px; white-space: pre-wrap; }

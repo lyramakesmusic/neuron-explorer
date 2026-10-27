@@ -587,9 +587,9 @@ class Runtime:
         Yields (row, text_delta), then (None, None)."""
         yield from self.steer_multi([(layer, n, dose, mode)], rows_messages, max_new, cancel)
 
-    def steer_multi(self, pushes, rows_messages, max_new=200, cancel=None, temperature=0.0, repetition_penalty=1.0, seed=0, min_p=0.0):
+    def steer_multi(self, pushes, rows_messages, max_new=200, cancel=None, temperature=0.0, repetition_penalty=1.0, seed=0, min_p=0.0, *, signs=(1, 0, -1)):
         """steer_stream for any number of neurons at once: pushes = [(layer, n, dose, mode)], all applied together.
-        Each is reversed in row 2 the same way a single neuron is (add: -dose; mul: x -dose). Greedy by default; with
+        signs selects each row's direction; by default row 2 reverses each push (add: -dose; mul: x -dose). Greedy by default; with
         temperature > 0 each row samples from its own generator seeded with `seed` (so a run repeats exactly), keeping
         only tokens with at least min_p times the top token's probability.
         repetition_penalty > 1 divides positive logits (multiplies negative ones) of every token already in the row's
@@ -600,7 +600,7 @@ class Runtime:
                 yield None, None
                 return
             try:
-                push = [self._push_entry(layer, n, dose, mode, (1, 0, -1)) for layer, n, dose, mode in pushes]
+                push = [self._push_entry(layer, n, dose, mode, signs) for layer, n, dose, mode in pushes]
                 seqs = [self.messages_ids(m) for m in rows_messages]
                 T = max(map(len, seqs))
                 pad = self.tok.pad_token_id if self.tok.pad_token_id is not None else 0
@@ -608,11 +608,12 @@ class Runtime:
                 mask = torch.tensor([[0] * (T - len(q)) + [1] * len(q) for q in seqs], device=self.dev)
                 pos = (mask.cumsum(-1) - 1).clamp(min=0)
                 eos = self.tok.convert_tokens_to_ids("<|im_end|>")
-                done, out_ids, sent = [False] * 3, [[] for _ in range(3)], [""] * 3
-                gens = [torch.Generator().manual_seed(int(seed)) for _ in range(3)]
+                k = len(seqs)
+                done, out_ids, sent = [False] * k, [[] for _ in range(k)], [""] * k
+                gens = [torch.Generator().manual_seed(int(seed)) for _ in range(k)]
                 seen = None
                 if repetition_penalty != 1.0:
-                    seen = torch.zeros(3, self.model.lm_head.out_features, dtype=torch.bool, device=self.dev)
+                    seen = torch.zeros(k, self.model.lm_head.out_features, dtype=torch.bool, device=self.dev)
                     for r, q in enumerate(seqs):
                         seen[r, torch.tensor(q, device=self.dev)] = True
                 self._push = push
@@ -632,12 +633,12 @@ class Runtime:
                                 probs = torch.where(probs >= min_p * probs.max(-1, keepdim=True).values, probs, 0.0)
                                 probs = probs / probs.sum(-1, keepdim=True)
                             probs = probs.cpu()
-                            nxt = torch.cat([torch.multinomial(probs[r], 1, generator=gens[r]) for r in range(3)]).to(self.dev)
+                            nxt = torch.cat([torch.multinomial(probs[r], 1, generator=gens[r]) for r in range(k)]).to(self.dev)
                         else:
                             nxt = logits.argmax(-1)
                         if seen is not None:
-                            seen[torch.arange(3, device=self.dev), nxt] = True
-                        for r in range(3):
+                            seen[torch.arange(k, device=self.dev), nxt] = True
+                        for r in range(k):
                             if done[r]:
                                 continue
                             t = int(nxt[r])

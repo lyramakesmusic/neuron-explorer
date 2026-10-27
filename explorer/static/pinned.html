@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pinned Chat</title>
+<link rel="stylesheet" href="style.css?v=69">
+</head>
+<body class="pinned">
+<!-- a chat steered by the pinned neurons alone, each at its own dose: one reply per turn, no 0 / reversed rows.
+     The pins come in the hash (#L17N567=-0.5;L3N2=x2), a snapshot of the main window's when this one opened. -->
+<main id="p-main">
+  <header id="p-head"><b>pinned chat</b><span id="p-recipe" class="mono"></span><button type="button" id="p-clear" class="dim">clear</button></header>
+  <div id="p-thread"></div>
+  <form id="p-form"><input id="p-input" placeholder="Who are you?" autocomplete="off"><button id="p-go" type="submit">run</button></form>
+</main>
+<script type="module">
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmtDose = d => (d > 0 ? "+" : d < 0 ? "−" : "") + Math.abs(d);
+const pinDose = p => p.mode === "mul" ? `×${p.dose}` : fmtDose(p.dose);
+
+const pins = decodeURIComponent(location.hash.slice(1)).split(";").map(s => s.match(/^L(\d+)N(\d+)=(x?)(-?\d*\.?\d+)$/i)).filter(Boolean)
+  .map(m => ({ layer: +m[1], n: +m[2], mode: m[3] ? "mul" : "add", dose: +m[4] }));
+const recipe = pins.length ? pins.map(p => `L${p.layer} N${p.n} ${pinDose(p)}`).join(" + ") : "no pins: the unsteered model";
+$("#p-recipe").textContent = recipe;
+document.title = pins.length ? `Pinned Chat · ${pins.length} neuron${pins.length === 1 ? "" : "s"}` : "Pinned Chat";
+
+const thread = [];
+let running = null;
+function render() {
+  const el = $("#p-thread");
+  el.innerHTML = thread.map(t => `<div class="turn"><div class="user">${esc(t.user)}</div>
+    <div class="col up${t.live ? " live" : ""}">${esc(t.reply)}</div>${t.error ? `<div class="err">${esc(t.error)}</div>` : ""}</div>`).join("");
+  el.scrollTop = el.scrollHeight;
+}
+$("#p-clear").onclick = () => { if (running) running.abort(); thread.length = 0; render(); };
+$("#p-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  if (running) { running.abort(); return; }
+  const text = $("#p-input").value.trim() || $("#p-input").placeholder;
+  const history = thread.filter(t => !t.error).map(t => ({ user: t.user, replies: [t.reply] }));
+  const turn = { user: text, reply: "", live: true };
+  thread.push(turn); $("#p-input").value = ""; render();
+  const col = $("#p-thread").lastElementChild.querySelector(".col");
+  const ctl = running = new AbortController(); $("#p-go").textContent = "stop";
+  try {
+    const res = await fetch("/api/steer", { method: "POST", headers: { "Content-Type": "application/json" }, signal: ctl.signal,
+      body: JSON.stringify({ only: true, neurons: pins, prompt: text, history }) });
+    if (!res.ok) throw new Error(`${res.status}: ${(await res.text()).slice(0, 160)}`);
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read(); if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let k;
+      while ((k = buf.indexOf("\n\n")) >= 0) {
+        const line = buf.slice(0, k); buf = buf.slice(k + 2);
+        if (!line.startsWith("data: ")) continue;
+        const ev = JSON.parse(line.slice(6));
+        if (ev.error) turn.error = ev.error;
+        if (ev.row == null) continue;
+        turn.reply += ev.t; col.textContent = turn.reply;
+        const th = $("#p-thread"); if (th.scrollHeight - th.scrollTop - th.clientHeight < 80) th.scrollTop = th.scrollHeight;
+      }
+    }
+  } catch (err) {
+    if (err.name !== "AbortError") turn.error = String(err);
+  } finally {
+    turn.live = false; running = null; $("#p-go").textContent = "run"; render();
+  }
+});
+$("#p-input").focus();
+</script>
+</body>
+</html>

@@ -263,17 +263,20 @@ async def steer(req: Request):
 
     def work():
         try:
+            # only: one row, steered by the given neurons alone at their own doses (no open neuron, no 0 / reversed rows)
+            only = bool(b.get("only"))
+            signs = (1,) if only else (1, 0, -1)
             # each row replays its own earlier replies; the user turns are shared
             rows = []
-            for r in range(3):
+            for r in range(len(signs)):
                 msgs = []
                 for turn in b.get("history", []):
                     msgs += [{"role": "user", "content": turn["user"]}, {"role": "assistant", "content": turn["replies"][r]}]
                 rows.append(msgs + [{"role": "user", "content": b["prompt"]}])
             # the open neuron, plus any pinned alongside it (neurons: [{layer, n, dose, mode}]), all steered together
-            pushes = [(int(b["layer"]), int(b["n"]), float(b["dose"]), b.get("mode", "add"))]
+            pushes = [] if only else [(int(b["layer"]), int(b["n"]), float(b["dose"]), b.get("mode", "add"))]
             pushes += [(int(x["layer"]), int(x["n"]), float(x["dose"]), x.get("mode", "add")) for x in b.get("neurons") or []]
-            for row, delta in rt.steer_multi(pushes, rows, int(b.get("max_new", 300)), cancel):
+            for row, delta in rt.steer_multi(pushes, rows, int(b.get("max_new", 300)), cancel, signs=signs):
                 loop.call_soon_threadsafe(q.put_nowait, {"row": row, "t": delta})
         except Exception as e:  # surfaced in the UI next to the chat
             loop.call_soon_threadsafe(q.put_nowait, {"row": None, "error": repr(e)})

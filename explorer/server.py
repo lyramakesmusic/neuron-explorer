@@ -21,14 +21,14 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "sweep"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rank import compute_units  # noqa: E402
-from runtime import CACHE, NO_MODEL, Runtime  # noqa: E402
+from runtime import CACHE, MODEL, NO_MODEL, Runtime  # noqa: E402
 
 RUNS, STATS = os.path.join(ROOT, "runs"), os.path.join(ROOT, "stats")
 # the agent's neuronary.org tools (agent_mcp.py) read the person's token from here when set
 NEURONARY_ENV = {k: os.environ[k] for k in ("NEURONARY_TOKEN", "NEURONARY_API") if os.environ.get(k)}
 NAMES = os.path.join(ROOT, "explorer", "names.json")
 PORT = int(os.environ.get("PORT", 8791))
-_cfg = AutoConfig.from_pretrained("Qwen/Qwen3.5-4B").get_text_config()
+_cfg = AutoConfig.from_pretrained(MODEL).get_text_config()
 ARCH = {"n_layers": _cfg.num_hidden_layers, "hidden": _cfg.hidden_size, "inter": _cfg.intermediate_size,
         "layer_types": list(_cfg.layer_types), "attn_heads": _cfg.num_attention_heads,
         "kv_heads": _cfg.num_key_value_heads, "linear_k_heads": _cfg.linear_num_key_heads,
@@ -149,7 +149,7 @@ def names():
 @app.get("/api/index")
 def index():
     runs = layer_runs()
-    return {"model": "Qwen/Qwen3.5-4B", "arch": ARCH,
+    return {"model": MODEL, "arch": ARCH,
             "layers": {str(l): os.path.basename(p) for l, p in sorted(runs.items())}, "status": rt.status}
 
 
@@ -296,13 +296,20 @@ def lens_index():
 
 @app.get("/api/search")
 async def search(q: str, limit: int = 300):
-    """Neurons whose logit lens (top 12 up or down) contains a token matching q (case-insensitive substring)."""
+    """Neurons whose logit lens (top 12 up or down) contains a token matching q, case-insensitive. Tokens equal to q
+    rank first, then tokens starting with q, then tokens containing it, so "owl" finds " owl" before " knowledge"."""
     idx = lens_index()
     q = q.strip().lower()
     if idx is None or len(q) < 2:
         return {"ready": idx is not None, "results": []}
     vocab = await asyncio.to_thread(rt.vocab_strings)
-    match = np.array([i for i, t in enumerate(vocab) if q in t.lower()], dtype=np.int32)
+    # per token: 0 = q itself, 1 = starts with q, 2 = contains q, 3 = no match
+    tier = np.full(len(vocab), 3, dtype=np.int32)
+    for i, t in enumerate(vocab):
+        t = t.strip().lower()
+        if q in t:
+            tier[i] = 0 if t == q else 1 if t.startswith(q) else 2
+    match = np.flatnonzero(tier < 3)
     if not len(match):
         return {"ready": True, "results": [], "tokens": 0}
     out = []
@@ -311,20 +318,22 @@ async def search(q: str, limit: int = 300):
     if st is not None:
         sources += [("+", st["up"], "steer"), ("-", st["down"], "steer")]
     for sign, arr, src in sources:
-        hit = np.isin(arr, match)  # [L, N, k]
-        count = hit.sum(-1)
-        best = np.where(hit, np.arange(arr.shape[-1]), 99).min(-1)
+        t = tier[arr]  # [L, N, k]
+        count = (t < 3).sum(-1)
+        # best match: closest tier first, then position in the lens
+        key = np.where(t < 3, t * 100 + np.arange(arr.shape[-1]), 999).min(-1)
         for l, n in zip(*np.nonzero(count)):
-            out.append((int(best[l, n]), -int(count[l, n]), int(l), int(n), sign, src))
+            k = int(key[l, n])
+            out.append((k // 100, k % 100, -int(count[l, n]), int(l), int(n), sign, src))
     # one row per neuron and sign, keeping its best match across the two lenses
     seen, uniq = set(), []
     for row in sorted(out):
-        if (row[2], row[3], row[4]) not in seen:
-            seen.add((row[2], row[3], row[4])); uniq.append(row)
+        if (row[3], row[4], row[5]) not in seen:
+            seen.add((row[3], row[4], row[5])); uniq.append(row)
     out = uniq
     nm, res = names(), []
-    sw = {l: swept(l) for l in {row[2] for row in out[:limit]}}
-    for rank, _, l, n, sign, src in out[:limit]:
+    sw = {l: swept(l) for l in {row[3] for row in out[:limit]}}
+    for _, rank, _, l, n, sign, src in out[:limit]:
         arr = (idx if src == "lens" else st)["up" if sign == "+" else "down"]
         res.append({"layer": l, "n": n, "sign": sign, "rank": rank, "src": src, "name": nm.get(f"L{l}/N{n}", ""),
                     "swept": n in sw[l], "lens": [vocab[t] for t in arr[l, n, :6]]})
@@ -824,7 +833,7 @@ def act_range(layer, n):
 @app.get("/api/agent/overview")
 def agent_overview():
     runs = layer_runs()
-    return {"model": "Qwen/Qwen3.5-4B", "arch": ARCH, "layers_with_sweeps": sorted(runs),
+    return {"model": MODEL, "arch": ARCH, "layers_with_sweeps": sorted(runs),
             "named_neurons": len(names()), "live_model": not NO_MODEL}
 
 

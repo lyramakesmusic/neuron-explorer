@@ -76,7 +76,13 @@ class Runtime:
             self.status = "loading"
             dev = "mps" if torch.backends.mps.is_available() else ("cuda" if torch.cuda.is_available() else "cpu")
             self.tok = AutoTokenizer.from_pretrained(MODEL)
-            m = Qwen3_5ForConditionalGeneration.from_pretrained(MODEL, dtype=torch.bfloat16).to(dev).eval()
+            # straight onto the device: loading on cpu and then moving needs two copies of the weights at once
+            if dev == "mps":  # one tensor at a time: transformers' threaded loading can deadlock copying to mps
+                os.environ.setdefault("HF_DEACTIVATE_ASYNC_LOAD", "1")
+            m = Qwen3_5ForConditionalGeneration.from_pretrained(MODEL, dtype=torch.bfloat16, device_map=dev).eval()
+            m.model.visual = None  # the vision tower is never used; frees its weights
+            if dev == "mps":
+                torch.mps.empty_cache()
             self.dev, self.model, self.lm = dev, m, m.model.language_model
             for i, layer in enumerate(self.lm.layers):
                 layer.mlp.down_proj.register_forward_pre_hook(self._hook(i))

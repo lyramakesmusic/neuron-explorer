@@ -57,7 +57,9 @@ const en = {
   "tabs.new": "new",
   "tabs.newTitle": "start a new conversation",
   "tabs.collapse": "collapse",
-  "tabs.showNeuron": "show neuron",
+  "tabs.showPanel": "show panel",
+  "tabs.openAgent": "open conversation",
+  "tabs.agentHandle": "‹ {agent}",
 
   "chat.add": "add",
   "chat.writes": "writes",
@@ -81,7 +83,8 @@ const en = {
   "agent.explain": "explain {ref}",
   "agent.web": "what does its web do?",
   "agent.webShown": "what does the web of {ref} do?",
-  "agent.neurons": "{n} neurons",
+  "agent.neurons_one": "1 neuron",
+  "agent.neurons_other": "{n} neurons",
   "agent.running": "running…",
   "agent.stopped": "stopped",
   "agent.edit": "edit",
@@ -96,6 +99,47 @@ const en = {
   "agent.hoursAgo": "{n}h ago",
   "agent.messages_one": "{n} message",
   "agent.messages_other": "{n} messages",
+
+  // agent tool labels (the expanded call still shows the raw tool name and JSON input, which stay identifiers)
+  "tool.overview": "overview",
+  "tool.neuron": "neuron",
+  "tool.rollouts": "rollouts",
+  "tool.cone": "cone",
+  "tool.web_summary": "web summary",
+  "tool.search_lens": "search lens",
+  "tool.top_units": "top units",
+  "tool.set_name": "set name",
+  "tool.names": "names",
+  "tool.steer": "steer",
+  "tool.activations": "activations",
+  "tool.compare": "compare",
+  "tool.logprobs": "logprobs",
+  "tool.top_firing": "top firing",
+  "tool.camera": "camera",
+  "tool.annotate_neurons": "annotate neurons",
+  "tool.show_text": "show text",
+  "tool.show_search": "show search",
+  "tool.open_tab": "open tab",
+  "tool.select_neuron": "select neuron",
+  "tool.head": "head",
+  "tool.neuron_heads": "neuron heads",
+  "tool.attention": "attention",
+  "tool.attn_drive": "attention drive",
+  "tool.select_head": "select head",
+  "tool.neuronary_search": "neuronary search",
+  "tool.neuronary_get": "neuronary get",
+  "tool.neuronary_publish": "neuronary publish",
+  "tool.neuronary_update": "neuronary update",
+  "tool.neuronary_comment": "neuronary comment",
+  "tool.neuronary_reproduce": "neuronary reproduce",
+  "tool.neuronary_vote": "neuronary vote",
+  "tool.highlight_neurons": "highlight neurons",
+  "tool.Read": "Read",
+  "tool.Glob": "Glob",
+  "tool.Grep": "Grep",
+  "tool.Write": "Write",
+  "tool.Edit": "Edit",
+  "tool.Bash": "Bash",
 
   "map.allLayers": "‹ all layers  ·  L{l}",
   "map.fullAttention": "full attention · {q} q / {kv} kv heads",
@@ -136,8 +180,10 @@ const en = {
   "results.indexing": "indexing lens",
   "results.running": "running…",
   "results.measuring": "measuring neuron ranges",
-  "results.pass": "{total} neurons pass · score = activation ÷ its typical extreme",
-  "results.summary": "{total} neurons · {tokens} tokens",
+  "results.pass_one": "1 neuron passes · score = activation ÷ its typical extreme",
+  "results.pass_other": "{total} neurons pass · score = activation ÷ its typical extreme",
+  "results.summary_one": "1 neuron · {tokens} token(s)",
+  "results.summary_other": "{total} neurons · {tokens} token(s)",
 
   "scatter.baseline": "baseline",
   "scatter.random": "random",
@@ -148,6 +194,23 @@ const en = {
   "status.indexing": "indexing lens {i}/{n}",
   "status.measuring": "measuring neuron ranges {seen}k/{tokens}k tokens",
   "status.noModel": "no model",
+  "status.other": "{raw}",
+
+  "error.http": "{path} · HTTP {status}: {detail}",
+  "error.label": "{label}: {error}",
+  "error.unknown": "unknown error",
+  "error.unreachable": "server unreachable",
+  "error.forbidden": "the server refused the request",
+  "error.fileTooLarge": "file is too large (over 25 MB)",
+  "error.noModel": "the live model is off",
+  "error.modelLoading": "the model is loading",
+  "error.noSuchChat": "conversation not found",
+  "error.noSuchHead": "attention head not found",
+  "error.agentExited": "the agent exited ({code})",
+  "error.agentExitedNoCode": "the agent exited",
+  "error.missingCli": "the agent command-line tool is missing: {name}",
+  "error.safety": "the reply was stopped by a safety classifier",
+  "error.technical": "technical error: {raw}",
 };
 
 const zh = {
@@ -205,7 +268,9 @@ const zh = {
   "tabs.new": "新建",
   "tabs.newTitle": "开始新对话",
   "tabs.collapse": "收起",
-  "tabs.showNeuron": "显示神经元",
+  "tabs.showPanel": "显示面板",
+  "tabs.openAgent": "打开对话",
+  "tabs.agentHandle": "‹ {agent} 对话",
 
   "chat.add": "加",
   "chat.writes": "写入",
@@ -229,7 +294,8 @@ const zh = {
   "agent.explain": "解释 {ref}",
   "agent.web": "它的连接网有什么作用？",
   "agent.webShown": "{ref} 的连接网有什么作用？",
-  "agent.neurons": "{n} 个神经元",
+  "agent.neurons_one": "{n} 个神经元",
+  "agent.neurons_other": "{n} 个神经元",
   "agent.running": "运行中…",
   "agent.stopped": "已停止",
   "agent.edit": "编辑",
@@ -244,6 +310,46 @@ const zh = {
   "agent.hoursAgo": "{n} 小时前",
   "agent.messages_one": "{n} 条消息",
   "agent.messages_other": "{n} 条消息",
+
+  "tool.overview": "概览",
+  "tool.neuron": "神经元",
+  "tool.rollouts": "生成样本",
+  "tool.cone": "连接锥",
+  "tool.web_summary": "连接网摘要",
+  "tool.search_lens": "搜索透镜",
+  "tool.top_units": "高排名单元",
+  "tool.set_name": "设置名称",
+  "tool.names": "已命名神经元",
+  "tool.steer": "引导生成",
+  "tool.activations": "激活值",
+  "tool.compare": "对比读取",
+  "tool.logprobs": "对数概率",
+  "tool.top_firing": "最强激活",
+  "tool.camera": "移动视角",
+  "tool.annotate_neurons": "标注神经元",
+  "tool.show_text": "显示文本",
+  "tool.show_search": "显示搜索",
+  "tool.open_tab": "切换标签页",
+  "tool.select_neuron": "打开神经元",
+  "tool.head": "注意力头",
+  "tool.neuron_heads": "神经元的注意力头",
+  "tool.attention": "注意力",
+  "tool.attn_drive": "注意力驱动",
+  "tool.select_head": "打开注意力头",
+  "tool.neuronary_search": "搜索 neuronary",
+  "tool.neuronary_get": "获取 neuronary 配方",
+  "tool.neuronary_publish": "发布 neuronary 配方",
+  "tool.neuronary_update": "更新 neuronary 配方",
+  "tool.neuronary_comment": "评论 neuronary 配方",
+  "tool.neuronary_reproduce": "报告 neuronary 复现",
+  "tool.neuronary_vote": "为 neuronary 配方投票",
+  "tool.highlight_neurons": "高亮神经元",
+  "tool.Read": "读取文件",
+  "tool.Glob": "查找文件",
+  "tool.Grep": "搜索文件",
+  "tool.Write": "写入文件",
+  "tool.Edit": "编辑文件",
+  "tool.Bash": "命令行",
 
   "map.allLayers": "‹ 全部层 · L{l}",
   "map.fullAttention": "全注意力 · {q} 个 q / {kv} 个 kv 头",
@@ -284,8 +390,10 @@ const zh = {
   "results.indexing": "正在索引透镜",
   "results.running": "运行中…",
   "results.measuring": "正在测量神经元范围",
-  "results.pass": "{total} 个神经元通过 · 得分 = 激活值 ÷ 其典型极值",
-  "results.summary": "{total} 个神经元 · {tokens} 个 token",
+  "results.pass_one": "1 个神经元通过 · 得分 = 激活值 ÷ 其典型极值",
+  "results.pass_other": "{total} 个神经元通过 · 得分 = 激活值 ÷ 其典型极值",
+  "results.summary_one": "1 个神经元 · {tokens} 个 token",
+  "results.summary_other": "{total} 个神经元 · {tokens} 个 token",
 
   "scatter.baseline": "基线",
   "scatter.random": "随机",
@@ -296,6 +404,23 @@ const zh = {
   "status.indexing": "正在索引透镜 {i}/{n}",
   "status.measuring": "正在测量神经元范围 {seen}k/{tokens}k token",
   "status.noModel": "未加载模型",
+  "status.other": "状态：{raw}",
+
+  "error.http": "{path} · HTTP {status}：{detail}",
+  "error.label": "{label}：{error}",
+  "error.unknown": "未知错误",
+  "error.unreachable": "无法连接服务器",
+  "error.forbidden": "服务器拒绝了请求",
+  "error.fileTooLarge": "文件过大（超过 25 MB）",
+  "error.noModel": "实时模型未启用",
+  "error.modelLoading": "模型正在加载",
+  "error.noSuchChat": "对话不存在",
+  "error.noSuchHead": "注意力头不存在",
+  "error.agentExited": "智能体已退出（{code}）",
+  "error.agentExitedNoCode": "智能体已退出",
+  "error.missingCli": "找不到智能体命令行工具：{name}",
+  "error.safety": "回复被安全分类器中止",
+  "error.technical": "技术错误：{raw}",
 };
 
 const DICT = { en, "zh-CN": zh };
@@ -327,6 +452,42 @@ export function t(key, vars) {
 // English needs a plural for a few counted labels; Chinese uses the same form for both.
 export function tp(key, n, vars = {}) {
   return t(`${key}_${n === 1 ? "one" : "other"}`, { ...vars, n });
+}
+
+// Backend and network errors are stable English strings (or raw technical output). Map the common ones here so the
+// API stays language-neutral; anything unmatched stays raw in English and gets a Chinese prefix in Chinese mode.
+function knownError(raw) {
+  const text = raw.trim();
+  if (!text) return t("error.unknown");
+  if (text === "server unreachable" || /^(failed to fetch|load failed|fetch failed|networkerror|network error)/i.test(text)
+    || /internet connection appears to be offline|network connection was lost/i.test(text)) return t("error.unreachable");
+  if (/^forbidden\b/i.test(text)) return t("error.forbidden");
+  if (/file over 25 mb|file too large|payload too large|request entity too large/i.test(text)) return t("error.fileTooLarge");
+  if (/stopped by (?:the )?[\w -]*safety classifier/i.test(text)) return t("error.safety");
+  if (/no such chat|conversation not found|chat not found|no such conversation/i.test(text)) return t("error.noSuchChat");
+  if (/no such head|head not found/i.test(text)) return t("error.noSuchHead");
+  const missing = text.match(/No such file or directory[^'"]*['"]([^'"]+)['"]|executable file not found[^'"]*['"]?([^'"\s]+)['"]?|spawn ([^ ]+) ENOENT/i);
+  if (missing) return t("error.missingCli", { name: (missing[1] || missing[2] || missing[3] || "").split("/").pop() });
+  const exited = text.match(/\b(?:claude|codex|dsh) exited(?:\s+(\d+))?\b/i);
+  if (exited) return exited[1] ? t("error.agentExited", { code: exited[1] }) : t("error.agentExitedNoCode");
+  if (/model loading|loading model/i.test(text)) return t("error.modelLoading");
+  if (/no live model|live model is off|live model disabled|explorer_no_model|^no model$/i.test(text)) return t("error.noModel");
+  return null;
+}
+
+export function localizeError(input) {
+  const raw = String(input?.message ?? input ?? "").trim();
+  const known = knownError(raw);
+  if (known) return known;
+  const http = raw.match(/^(\S+) (\d{3}):\s*([\s\S]*)$/);
+  if (http) {
+    const [, path, status, body] = http;
+    let detail = body;
+    try { const j = JSON.parse(body); if (j && typeof j.error === "string") detail = j.error; } catch {}
+    detail = knownError(detail) || (getLang() === "zh-CN" ? t("error.technical", { raw: detail }) : detail);
+    return t("error.http", { path, status, detail });
+  }
+  return getLang() === "zh-CN" ? t("error.technical", { raw }) : raw;
 }
 
 // Translate the static markup: data-i18n (text), data-i18n-html (markup), and the placeholder/title/aria variants.

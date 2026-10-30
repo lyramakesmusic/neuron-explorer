@@ -25,12 +25,23 @@ steered chat, lens, connections and live inference over your own text.
 - **language**: the interface follows the browser language on first visit; the menu at the right of the header
   switches between English and Simplified Chinese (the choice is kept in this browser). Translations live in
   `explorer/static/i18n.js`.
-- **Claude** (fourth neuron-panel tab, or the right-edge handle): a chat running the `claude` CLI (installed and
-  logged in) with the explorer as an MCP server (`explorer/agent_mcp.py`). It reads neurons, cones and lenses, runs the
-  live model (steering, activations, next-token logprobs, ablations), moves the map, list and highlights, and has file
-  tools and a shell in your home folder. Its prompt is `explorer/agent_prompt.md` plus `explorer/agent_methodology.md`, and
-  `explorer/agent_prompt.local.md` when present (untracked, for your own additions);
-  `EXPLORER_CLAUDE_MODEL` picks the model. The server answers only pages and tools on this machine.
+- **agents** (fourth neuron-panel tab, or the right-edge handle): a chat running Claude, Codex or DSH, picked in the
+  dropdown beside the tab. Each one gets the explorer as an MCP server (`explorer/agent_mcp.py`), so it reads neurons,
+  cones and lenses, runs the live model (steering, activations, next-token logprobs, ablations), moves the map, list and
+  highlights, and has file tools and a shell in your home folder. The prompt is `explorer/agent_prompt.md` plus
+  `explorer/agent_methodology.md`, and `explorer/agent_prompt.local.md` when present (untracked, for your own additions).
+  - **Claude**: needs the `claude` CLI installed and logged in; `EXPLORER_CLAUDE_MODEL` picks the model.
+  - **Codex**: needs the `codex` CLI installed and logged in; it uses its own `CODEX_HOME` under `explorer/cache/agent/`.
+  - **DSH**: needs DeepSeek Harness (`dsh`) on PATH and a DeepSeek API key. The server creates
+    `$DSH_HOME/profiles/neuron-explorer` (default `~/.dsh/profiles/neuron-explorer`) on first use, with the base and
+    headless bundles plus `@deepseek-ai/dsh-mcp-client` at the running `dsh` version. The key is read from the
+    `DEEPSEEK_API_KEY` environment variable, else from `refs.DEEPSEEK_API_KEY` in `~/.dsh/.credentials.yaml`, and is
+    passed only in the child process's environment: neither the profile nor its generated patch contains it. One
+    `dsh --json` process runs per turn; the chat's session id is resumed on later turns, and a message sent mid-turn
+    waits for the current reply. `EXPLORER_DSH` overrides the binary path; `EXPLORER_DSH_PERMISSION_MODE` adds DSH's
+    `--permission-mode` preset (for example `workspace-write`) when set; otherwise DSH's headless default applies.
+
+  The server answers only pages and tools on this machine.
 
 ## Sweep
 

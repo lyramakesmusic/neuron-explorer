@@ -337,3 +337,24 @@ tr.con .logit .tok { font-size: 10.5px; }
 #net .lrow { display: flex; gap: 6px; align-items: baseline; margin-bottom: 3px; }
 #net .lrow .sgn { flex: none; width: 1em; font-family: var(--mono); }
 #net .lrow .sgn.up { color: var(--up); } #net .lrow .sgn.down { color: var(--down); }
+
+/* update from the author's main branch */
+#update-check { flex: none; color: var(--dim); font-size: 15px; line-height: 1; padding: 4px 6px; border-radius: 4px; }
+#update-check:hover { color: var(--ink); }
+#update-check.has { color: #ffc76e; }
+#update-overlay { position: fixed; inset: 0; z-index: 100000; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, .58); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+#update-dialog { width: min(640px, calc(100vw - 40px)); max-height: min(760px, calc(100vh - 60px)); overflow: auto; box-sizing: border-box; background: #0e1416; border: 1px solid #2b3c43; border-radius: 14px; padding: 20px 22px; color: var(--ink); box-shadow: 0 24px 80px rgba(0, 0, 0, .65); font: 13px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
+#update-dialog h2 { margin: 0 0 12px; font-size: 17px; font-weight: 600; }
+#update-dialog p { margin: 0 0 8px; color: var(--dim); white-space: pre-wrap; }
+#update-dialog .u-meta { display: flex; flex-wrap: wrap; gap: 8px 18px; color: var(--dim); font-size: 12px; margin-bottom: 12px; }
+#update-dialog .u-meta b { color: var(--ink); font-family: var(--mono); font-weight: 500; }
+#update-dialog .u-warn { margin: 8px 0 12px; padding: 8px 10px; border: 1px solid rgba(255, 128, 100, .35); border-radius: 8px; background: rgba(255, 100, 80, .08); color: #ffb3a6; font-size: 12px; }
+#update-dialog .u-count { color: var(--dim); font-size: 12px; margin: 6px 0; }
+#update-dialog .u-status { min-height: 18px; color: var(--dim); font-size: 12px; margin: 8px 0 2px; white-space: pre-wrap; }
+#update-dialog .u-status.err { color: #ff9b86; }
+#update-dialog #u-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+#update-dialog button { background: #172126; color: var(--ink); border: 1px solid #2b3c43; border-radius: 7px; padding: 6px 13px; font-size: 13px; }
+#update-dialog button:hover { border-color: #3d565f; }
+#update-dialog button.primary { background: #ffc76e; border-color: #ffc76e; color: #1a1306; font-weight: 600; }
+#update-dialog button:disabled { opacity: .45; cursor: default; }
+#update-check:disabled { opacity: .4; cursor: default; }

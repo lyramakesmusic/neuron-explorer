@@ -934,6 +934,175 @@ function localizeStatus(s) {
   return s;
 }
 window.__ne = { map, state, scatter };
+
+// ---------- update from the author's main branch ----------
+let updateInfo = null;
+let updateOverlay = null;
+let updateBusy = false;
+
+const shortSHA = s => String(s || "").slice(0, 7);
+const updateErrKey = code => ({
+  "update.not_git": "update.notGit",
+  "update.fetch_failed": "update.fetchFailed",
+  "update.dirty": "update.dirty",
+  "update.diverged": "update.diverged",
+  "update.deps_failed": "update.depsFailed",
+  "update.git_missing": "update.gitMissing",
+  "update.timeout": "update.timeout",
+  "update.git_failed": "update.gitFailed",
+  "update.apply_failed": "update.applyFailed",
+}[code] || null);
+
+function updateErrorText(r) {
+  const key = updateErrKey(r?.code);
+  const raw = r?.error || t("error.unknown");
+  return key ? t(key, { error: raw }) : raw;
+}
+
+function closeUpdateDialog() {
+  if (!updateOverlay) return;
+  updateOverlay.remove();
+  updateOverlay = null;
+  updateBusy = false;
+}
+
+function updateDialogShell(title, bodyHTML, actionsHTML) {
+  closeUpdateDialog();
+  const overlay = document.createElement("div");
+  overlay.id = "update-overlay";
+  overlay.innerHTML = `<div id="update-dialog" role="dialog" aria-modal="true">
+    <h2>${esc(title)}</h2>
+    <div id="u-body">${bodyHTML}</div>
+    <div id="u-actions">${actionsHTML}</div>
+  </div>`;
+  overlay.addEventListener("click", e => { if (e.target === overlay && !updateBusy) closeUpdateDialog(); });
+  document.body.appendChild(overlay);
+  updateOverlay = overlay;
+  return overlay;
+}
+
+function showUpdateMessage(title, body) {
+  updateDialogShell(title, `<p>${esc(body)}</p>`,
+    `<button id="u-ok" class="primary">${esc(t("update.ok"))}</button>`);
+  $("#u-ok").onclick = closeUpdateDialog;
+}
+
+function openUpdateDialog(info) {
+  updateInfo = info;
+  const current = shortSHA(info.current), latest = shortSHA(info.latest);
+  const warnings = [];
+  if (info.dirty?.length) warnings.push(t("update.dirty"));
+  if (!info.fast_forward) warnings.push(info.ahead ? t("update.local") : t("update.diverged"));
+  const canApply = info.fast_forward && !(info.dirty?.length);
+  updateDialogShell(t("update.title"), `
+    <div class="u-meta"><span>${esc(t("update.current"))} <b>${esc(current)}</b></span>
+      <span>${esc(t("update.latest"))} <b>${esc(latest)}</b></span>
+      <span>${esc(t("update.branch"))} <b>${esc(info.branch || "main")}</b></span></div>
+    ${warnings.length ? `<div class="u-warn">${warnings.map(w => `<div>${esc(w)}</div>`).join("")}</div>` : ""}
+    <div class="u-count">${esc(t("update.commits", { n: info.count || 0 }))}</div>
+    <div id="u-status" class="u-status"></div>`,
+    `<button id="u-later">${esc(t("update.cancel"))}</button>
+     <button id="u-apply" class="primary" ${canApply ? "" : "disabled"}>${esc(t("update.apply"))}</button>`);
+  $("#u-later").onclick = closeUpdateDialog;
+  $("#u-apply").onclick = () => applyUpdate();
+}
+
+async function checkUpdates() {
+  const btn = $("#update-check");
+  if (!btn) return;
+  btn.disabled = true;
+  try {
+    const r = await api("/api/update/check");
+    if (!r.ok) {
+      showUpdateMessage(t("update.check"), updateErrorText(r));
+      return;
+    }
+    updateInfo = r;
+    if (r.available) {
+      btn.classList.add("has");
+      btn.title = tp("update.available", r.count || 1, { n: r.count || 1 });
+      openUpdateDialog(r);
+    } else {
+      btn.classList.remove("has");
+      btn.title = t("update.check");
+      showUpdateMessage(t("update.check"), t("update.none", { sha: shortSHA(r.current) }));
+    }
+  } catch (err) {
+    showUpdateMessage(t("update.check"), updateErrorText({ error: String(err.message || err) }));
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function waitForServer(oldBoot) {
+  // The process is re-exec'd: wait until the boot id changes, then reload.  A plain
+  // 200 is not enough — the old process still answers until execve replaces it.
+  await new Promise(r => setTimeout(r, 1500));
+  for (let i = 0; i < 120; i++) {
+    try {
+      const r = await fetch("/api/update/status?t=" + Date.now(), { cache: "no-store" });
+      if (r.ok) {
+        const j = await r.json();
+        if (j.boot && j.boot !== oldBoot) { location.reload(); return; }
+      }
+    } catch (e) {}
+    await new Promise(r => setTimeout(r, 600));
+  }
+  const status = $("#u-status");
+  if (status) status.textContent = t("update.restartManual");
+}
+
+async function applyUpdate() {
+  if (updateBusy) return;
+  updateBusy = true;
+  const apply = $("#u-apply"), later = $("#u-later"), status = $("#u-status");
+  if (apply) { apply.disabled = true; apply.textContent = t("update.applying"); }
+  if (later) later.disabled = true;
+  if (status) status.textContent = t("update.applying");
+  try {
+    const r = await api("/api/update/apply", {});
+    if (!r.ok) throw new Error(updateErrorText(r));
+    if (r.up_to_date) {
+      closeUpdateDialog();
+      showUpdateMessage(t("update.check"), t("update.none", { sha: shortSHA(r.commit) }));
+      return;
+    }
+    updateBusy = false;
+    if (status) {
+      status.textContent = r.deps_ok === false
+        ? t("update.depsWarning", { error: r.deps_error || "" }) + " " + t("update.restarting")
+        : t("update.done", { sha: shortSHA(r.commit) });
+    }
+    if (apply) apply.textContent = t("update.applying");
+    try {
+      const rr = await api("/api/update/restart", {});
+      waitForServer(rr.boot || "");
+    } catch (err) {
+      if (status) status.textContent = t("update.restartManual") + " " + err.message;
+      if (later) later.disabled = false;
+    }
+  } catch (err) {
+    updateBusy = false;
+    if (status) {
+      status.textContent = t("update.failed", { error: String(err.message || err) });
+      status.classList.add("err");
+    }
+    if (later) later.disabled = false;
+    if (apply) apply.disabled = false;
+  }
+}
+
+$("#update-check").onclick = () => checkUpdates();
+document.addEventListener("i18nchange", () => {
+  if (updateInfo && updateInfo.available) {
+    const btn = $("#update-check");
+    if (btn) btn.title = tp("update.available", updateInfo.count || 1, { n: updateInfo.count || 1 });
+  }
+  if (!updateOverlay) return;
+  if (updateInfo && updateInfo.available) openUpdateDialog(updateInfo);
+  else closeUpdateDialog();
+});
+
 // ---------- start ----------
 const have = Object.keys(index.layers).map(Number);
 let saved = null; try { const v = localStorage.getItem("ne.layer"); if (v !== null) saved = +v; } catch {}

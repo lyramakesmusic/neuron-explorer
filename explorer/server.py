@@ -7,6 +7,9 @@ import builtins
 import glob
 import json
 import os
+import re
+import shutil
+import subprocess
 import sys
 import threading
 
@@ -802,9 +805,10 @@ def web_summary(layer: int, n: int, first: int = 5, k: int = 2, top: int = 30, s
             "up": {"neurons": len(up), "fed_by": pool(up, 1), "held_by": pool(up, -1)}}
 
 
-# ---------- Claude: autointerp and chat ----------
-# Each chat is a `claude -p` session resumed turn by turn. Its tools come from agent_mcp.py, which reads through the
-# endpoints below and sends map actions back through /api/agent/ui into the chat's event stream.
+# ---------- agents: autointerp and chat ----------
+# Each chat runs Claude, Codex or DSH, resumed turn by turn (a persistent claude/codex process, or a dsh process per
+# turn). Its tools come from agent_mcp.py, which reads through the endpoints below and sends map actions back through
+# /api/agent/ui into the chat's event stream.
 AGENT_PROMPT = os.path.join(ROOT, "explorer", "agent_prompt.md")
 AGENT_DIR = os.path.join(ROOT, "explorer", "cache", "agent")  # claude's cwd, so no project settings or CLAUDE.md apply
 _chats = {}
@@ -1292,22 +1296,28 @@ def agent_chats(limit: int = 60):
         if hit[1]["turns"]:
             out.append(hit[1])
     for cid, m in _meta().items():
-        path = os.path.join(CODEX_LOGS, f"{os.path.basename(cid)}.jsonl")
-        if m.get("agent") != "codex" or not os.path.exists(path):
+        kind = m.get("agent")
+        if kind not in ("codex", "dsh"):
+            continue
+        path = os.path.join(CODEX_LOGS if kind == "codex" else DSH_LOGS, f"{os.path.basename(cid)}.jsonl")
+        if not os.path.exists(path):
             continue
         users = [e for e in map(json.loads, open(path)) if e.get("t") == "user"]
         if users:
-            out.append({"chat": cid, "t": int(os.path.getmtime(path)), "title": users[0]["text"].strip()[:120], "turns": len(users), "agent": "codex"})
+            out.append({"chat": cid, "t": int(os.path.getmtime(path)), "title": users[0]["text"].strip()[:120],
+                        "turns": len(users), "agent": kind})
     return sorted(out, key=lambda c: -c["t"])[:limit]
 
 
 @app.get("/api/agent/history")
 def agent_history(chat: str):
     """A past chat as the events a live turn streams (text, tool, tool_result), with a user event per message."""
-    if _meta().get(chat, {}).get("agent") == "codex":
-        path = os.path.join(CODEX_LOGS, f"{os.path.basename(chat)}.jsonl")
-        ev = [e for e in map(json.loads, open(path)) if e.get("t") in ("user", "text", "tool", "tool_result")] if os.path.exists(path) else []
-        return {"chat": chat, "agent": "codex", "events": ev}
+    kind = _meta().get(chat, {}).get("agent")
+    if kind in ("codex", "dsh"):
+        path = os.path.join(CODEX_LOGS if kind == "codex" else DSH_LOGS, f"{os.path.basename(chat)}.jsonl")
+        ev = [e for e in map(json.loads, open(path)) if e.get("t") in ("user", "text", "tool", "tool_result", "error")] \
+            if os.path.exists(path) else []
+        return {"chat": chat, "agent": kind, "events": ev}
     path = _session_file(chat)
     if not path:
         return {"events": []}
@@ -1366,6 +1376,24 @@ async def agent_rewind(req: Request):
                 with open(path, "w") as f:
                     f.writelines(json.dumps(e, ensure_ascii=False) + "\n" for e in ev[:last])
         return {"ok": True, "cut": bool(turns)}
+    if meta.get("agent") == "dsh":
+        # DSH cannot cut a persisted session at a turn boundary. Drop the last turn from the replay log and start a
+        # fresh DSH session next time: the model's context then matches the thread left on screen. Earlier turns stay
+        # in the thread but are not carried into the new session.
+        path = os.path.join(DSH_LOGS, f"{os.path.basename(sid)}.jsonl")
+        cut = False
+        if os.path.exists(path):
+            ev = [json.loads(x) for x in open(path)]
+            last = max((i for i, e in enumerate(ev) if e.get("t") == "user"), default=None)
+            if last is not None:
+                with open(path, "w") as f:
+                    f.writelines(json.dumps(e, ensure_ascii=False) + "\n" for e in ev[:last])
+                cut = True
+        c = _chats.get(sid)
+        if c is not None:
+            await _end_chat(c)
+        _meta_set(sid, dsh_session=None)
+        return {"ok": True, "cut": cut, "session_reset": True}
     if sid in _chats:  # a live process holds the conversation in memory; the next message resumes from the cut file
         await _end_chat(_chats[sid])
     path = _session_file(sid)
@@ -1414,8 +1442,9 @@ def _claude_cmd(cid):
     return cmd + (["--resume", cid] if _session_file(cid) else ["--session-id", cid])
 
 
-CHAT_META = os.path.join(AGENT_DIR, "chats.json")  # per chat: agent ("claude" / "codex"), codex thread id and turn ids
+CHAT_META = os.path.join(AGENT_DIR, "chats.json")  # per chat: agent ("claude" / "codex" / "dsh"), thread ids, dsh session
 CODEX_LOGS = os.path.join(AGENT_DIR, "codex_logs")  # per codex chat: its events, for past-chat replay
+DSH_LOGS = os.path.join(AGENT_DIR, "dsh_logs")  # per dsh chat: its events, for past-chat replay
 
 
 def _meta():
@@ -1436,19 +1465,25 @@ def _meta_set(cid, **kw):
 def _chat(cid, agent=None):
     c = _chats.get(cid)
     # a chat that hasn't run yet (an event stream can open before its first message) takes the agent it's sent with
-    if c is not None and agent in ("claude", "codex") and c["proc"] is None and not _meta().get(cid, {}).get("agent") \
-            and not _session_file(cid) and c["agent"] != agent:
+    if c is not None and agent in ("claude", "codex", "dsh") and c["proc"] is None \
+            and not _meta().get(cid, {}).get("agent") and not _session_file(cid) and c["agent"] != agent:
         del _chats[cid]
         c2 = _chat(cid, agent)
         c2["listeners"] = c["listeners"]
         return c2
     if cid not in _chats:
         known = _meta().get(cid, {}).get("agent")
-        kind = known or (agent if agent in ("claude", "codex") else "claude")
-        if not known and kind == "codex":
-            _meta_set(cid, agent="codex")
+        kind = known or (agent if agent in ("claude", "codex", "dsh") else "claude")
+        if not known and kind in ("codex", "dsh"):
+            _meta_set(cid, agent=kind)
         _chats[cid] = {"session": cid, "agent": kind, "proc": None, "listeners": set(), "turn": [], "busy": False, "last": 0.0}
     return _chats[cid]
+
+
+def _dsh_log(cid, ev):
+    os.makedirs(DSH_LOGS, exist_ok=True)
+    with open(os.path.join(DSH_LOGS, f"{os.path.basename(cid)}.jsonl"), "a") as f:
+        f.write(json.dumps(ev, ensure_ascii=False) + "\n")
 
 
 def _codex_log(cid, ev):
@@ -1462,8 +1497,11 @@ def _emit(c, ev):
     c["last"] = time.time()
     if ev.get("t") != "ui":
         c["turn"].append(ev)
-        if c["agent"] == "codex" and ev.get("t") in ("text", "tool", "tool_result", "error", "done"):
-            _codex_log(c["session"], ev)
+        if ev.get("t") in ("text", "tool", "tool_result", "error", "done"):
+            if c["agent"] == "codex":
+                _codex_log(c["session"], ev)
+            elif c["agent"] == "dsh":
+                _dsh_log(c["session"], ev)
     for q in list(c["listeners"]):
         q.put_nowait(ev)
 
@@ -1656,6 +1694,355 @@ def _agent_files_mtime():
     return max((os.path.getmtime(x) for x in paths if os.path.exists(x)), default=0)
 
 
+# ---------- DSH: one `dsh headless --json` process per turn, its profile under $DSH_HOME/profiles/neuron-explorer ----------
+# The profile is shared by every chat: the explorer MCP server reads the chat id from EXPLORER_CHAT in the child's
+# environment, so concurrent chats don't overwrite each other's configuration. The API key is passed only in the child
+# process's env; neither the profile nor its patch file contains it.
+DSH_PROFILE = "neuron-explorer"
+DSH_DEFAULT_API = "https://mcczbdcymyhzfputyqcr.supabase.co/functions/v1/api"
+_dsh_cache = {}  # binary path and version, found once
+_DSH_LOCK = threading.Lock()  # profile setup/install is serialized
+
+
+def _dsh_home():
+    return os.environ.get("DSH_HOME") or os.path.expanduser("~/.dsh")
+
+
+def _dsh_bin():
+    return os.environ.get("EXPLORER_DSH") or shutil.which("dsh") or (
+        "/usr/local/bin/dsh" if os.path.exists("/usr/local/bin/dsh") else None)
+
+
+def _dsh_version(binary):
+    if _dsh_cache.get("version"):
+        return _dsh_cache["version"]
+    r = subprocess.run([binary, "--version"], capture_output=True, text=True, timeout=60)
+    m = re.search(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?", (r.stdout or "") + " " + (r.stderr or ""))
+    if not m:
+        raise RuntimeError("could not read `dsh --version`")
+    _dsh_cache["version"] = m.group(0)
+    return _dsh_cache["version"]
+
+
+def _dsh_api_key():
+    """DEEPSEEK_API_KEY from the environment, else refs.DEEPSEEK_API_KEY in ~/.dsh/.credentials.yaml.
+    The value is never logged or written anywhere."""
+    key = (os.environ.get("DEEPSEEK_API_KEY") or "").strip()
+    if key:
+        return key
+    try:
+        text = open(os.path.join(_dsh_home(), ".credentials.yaml"), encoding="utf-8").read()
+    except OSError:
+        return None
+    in_refs = False
+    for line in text.splitlines():
+        if not in_refs:
+            if re.match(r"^refs:\s*(?:#.*)?$", line):
+                in_refs = True
+            continue
+        if line and not line[0].isspace():
+            break
+        m = re.match(r"^\s+DEEPSEEK_API_KEY:\s*(.*?)\s*$", line)
+        if m:
+            v = re.sub(r"\s+#.*$", "", m.group(1)).strip()
+            if len(v) >= 2 and v[0] == v[-1] and v[0] in "'\"":
+                v = v[1:-1]
+            return v or None
+    return None
+
+
+DSH_NOTE = """
+
+## This session
+
+You are running as DSH (DeepSeek Harness), one of the agents in the neuron explorer beside Claude and Codex. Where
+these instructions name Read, Glob, Grep, Write, Edit or Bash, use your own tools: `read`, `glob`, `grep`, `write`,
+`edit` and `bash`. Start anything that runs longer than about a minute detached
+(`nohup {ROOT}/.venv/bin/python script.py > script.log 2>&1 &`), say where the log is, and end your reply; read the log
+in a later turn. Messages the person sends while you work are queued and answered after the current reply; stop ends
+the current process."""
+
+
+def _dsh_prompt_text():
+    return open(agent_prompt_file(), encoding="utf-8").read().rstrip() + DSH_NOTE.replace("{ROOT}", ROOT)
+
+
+def _yaml_str(s):
+    return "'" + str(s).replace("'", "''") + "'"
+
+
+def _dsh_patch_text(prompt):
+    """The profile's patch layer: the explorer instructions as the system-prompt persona, and the explorer MCP
+    server. !!js expressions read per-process values at boot, so nothing chat-specific is written to disk."""
+    body = "\n".join(("      " + line) if line else "" for line in prompt.splitlines())
+    return f"""# Generated by explorer/server.py for the DSH agent; edits are overwritten.
+# The DeepSeek API key is deliberately absent: the server passes it in the child process's environment only.
+- id: system-prompt
+  config:
+    personaPrefix: |-
+{body}
+- insert:
+    - id: mcp-explorer
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: explorer
+        transport: stdio
+        command: {_yaml_str(sys.executable)}
+        args:
+          - {_yaml_str(os.path.join(ROOT, "explorer", "agent_mcp.py"))}
+        cwd: {_yaml_str(AGENT_DIR)}
+        env:
+          EXPLORER_URL: !!js process.env.EXPLORER_URL || ''
+          EXPLORER_CHAT: !!js process.env.EXPLORER_CHAT || ''
+          NEURONARY_TOKEN: !!js process.env.NEURONARY_TOKEN || ''
+          NEURONARY_API: !!js process.env.NEURONARY_API || {_yaml_str(DSH_DEFAULT_API)}
+        toolCallTimeoutMs: 120000
+"""
+
+
+def _prepare_dsh():
+    """Make the DSH profile usable, idempotently: base+headless bundles, the MCP client plugin, and the patch.
+    Returns None, or {"error", "code"} for the UI. Called in a worker thread (the first run installs a package)."""
+    with _DSH_LOCK:
+        binary = _dsh_bin()
+        if not binary:
+            return {"error": "DSH is not installed or not on PATH (looked for `dsh`). Install DeepSeek Harness first.",
+                    "code": "dsh_missing"}
+        home = _dsh_home()
+        prof = os.path.join(home, "profiles", DSH_PROFILE)
+        pkg_path = os.path.join(prof, "package.json")
+        try:
+            version = _dsh_version(binary)
+        except Exception as e:
+            return {"error": f"DSH: {e}", "code": "dsh_profile"}
+        env = {**os.environ, "DSH_HOME": home}
+        dep = "@deepseek-ai/dsh-mcp-client"
+
+        def install():
+            r = subprocess.run([binary, "plugin", "--profile", DSH_PROFILE, "add", f"{dep}@{version}"],
+                               env=env, capture_output=True, text=True, timeout=600)
+            if r.returncode != 0:
+                tail = (r.stderr or r.stdout or "").strip().splitlines()[-3:]
+                raise RuntimeError("installing DSH's MCP client failed: " + " / ".join(tail))
+            return r
+
+        try:
+            if not os.path.exists(pkg_path):
+                install()
+            pkg = json.load(open(pkg_path))
+            # `dsh plugin` may create the profile with only the base bundle; headless is what runs --json. Keep any
+            # bundles the person added after the two the explorer needs.
+            want = ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-headless"]
+            bundles = (pkg.get("dsh") or {}).get("profile", {}).get("bundles") or []
+            merged = want + [b for b in bundles if b not in want]
+            need = bundles != merged
+            installed = os.path.join(prof, "node_modules", "@deepseek-ai", "dsh-mcp-client", "package.json")
+            have = None
+            if os.path.exists(installed):
+                have = json.load(open(installed)).get("version")
+            if (pkg.get("dependencies") or {}).get(dep) != version or have != version:
+                install()
+                pkg = json.load(open(pkg_path))
+                bundles = (pkg.get("dsh") or {}).get("profile", {}).get("bundles") or []
+                merged = want + [b for b in bundles if b not in want]
+                need = bundles != merged
+            if need:
+                pkg.setdefault("dsh", {}).setdefault("profile", {})["bundles"] = merged
+                with open(pkg_path, "w", encoding="utf-8") as f:
+                    json.dump(pkg, f, indent=2)
+                    f.write("\n")
+            os.makedirs(AGENT_DIR, exist_ok=True)
+            prompt = _dsh_prompt_text()
+            patch = _dsh_patch_text(prompt)
+            patch_path = os.path.join(prof, "cordis.patch.yml")
+            old = open(patch_path, encoding="utf-8").read() if os.path.exists(patch_path) else None
+            if old != patch:
+                with open(patch_path, "w", encoding="utf-8") as f:
+                    f.write(patch)
+        except Exception as e:
+            return {"error": f"DSH profile setup failed: {e}", "code": "dsh_profile"}
+        return None
+
+
+def _dsh_session(cid):
+    return (_meta().get(cid) or {}).get("dsh_session")
+
+
+def _dsh_env(cid, key):
+    # The profile follows DSH's own default approval/sandbox policy.  Set EXPLORER_DSH_PERMISSION_MODE to add
+    # `--permission-mode <preset>` (for example workspace-write) when the person wants a tighter sandbox.
+    env = {**os.environ, "DSH_HOME": _dsh_home(), "EXPLORER_URL": f"http://127.0.0.1:{PORT}",
+           "EXPLORER_CHAT": cid, "NO_COLOR": "1", "DEEPSEEK_API_KEY": key}
+    env.update(NEURONARY_ENV)
+    return env
+
+
+def _dsh_attachment(fid):
+    """An uploaded file as text for the DSH task: text inline, images and PDFs by path for its own tools."""
+    fid = os.path.basename(str(fid))
+    mp = os.path.join(UPLOADS, f"{fid}.json")
+    if not os.path.exists(mp):
+        return None
+    meta = json.load(open(mp))
+    path = os.path.join(UPLOADS, f"{fid}-{meta['name']}")
+    name = meta["name"]
+    kind = meta.get("type") or ""
+    if kind.startswith("image/") or name.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
+        return f'<file name="{name}" path="{path}">[image attached; use `read_image` on this path to see it]</file>'
+    if kind == "application/pdf" or name.lower().endswith(".pdf"):
+        return f'<file name="{name}" path="{path}">[PDF attached; read it with your tools if you need it]</file>'
+    try:
+        text = open(path, "rb").read().decode("utf-8", errors="replace")
+    except OSError:
+        return None
+    cut = 200_000
+    more = f"\n[... {len(text) - cut} more characters cut]" if len(text) > cut else ""
+    return f'<file name="{name}">\n{text[:cut]}{more}\n</file>'
+
+
+def _dsh_message(msg, attachments):
+    parts = [msg]
+    for fid in attachments:
+        blk = _dsh_attachment(fid)
+        if blk:
+            parts.append(blk)
+    return "\n\n".join(parts)
+
+
+async def _dsh_start(c, item):
+    """Start one turn: a fresh `dsh --json` process, resuming the chat's session when there is one."""
+    key = _dsh_api_key()
+    if not key:
+        c["busy"] = False
+        _emit(c, {"t": "error", "error": "DSH needs a DeepSeek API key: export DEEPSEEK_API_KEY, or store it in "
+                                        "~/.dsh/.credentials.yaml under refs.DEEPSEEK_API_KEY."})
+        _emit(c, {"t": "done"})
+        return
+    cmd = [_dsh_bin(), "--profile", DSH_PROFILE, "--json"]
+    if os.environ.get("EXPLORER_DSH_PERMISSION_MODE"):
+        cmd += ["--permission-mode", os.environ["EXPLORER_DSH_PERMISSION_MODE"]]
+    sid = _dsh_session(c["session"])
+    if sid:
+        cmd += ["--session-id", sid]
+    cmd.append("-")  # task text on stdin: no argv limits, attachments can be large
+    c["stopping"] = False
+    c["busy"] = True
+    _emit(c, {"t": "sent"})
+    _dsh_log(c["session"], {"t": "user", "text": item["shown"]})
+    try:
+        proc = await asyncio.create_subprocess_exec(*cmd, cwd=AGENT_DIR, env=_dsh_env(c["session"], key),
+                                                    stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+                                                    stderr=asyncio.subprocess.PIPE, limit=1 << 24,
+                                                    start_new_session=True)
+    except Exception as e:
+        c["busy"] = False
+        _emit(c, {"t": "error", "error": f"dsh: {e}"})
+        _emit(c, {"t": "done"})
+        return
+    c["proc"] = proc
+    try:
+        proc.stdin.write(item["prompt"].encode())
+        await proc.stdin.drain()
+        proc.stdin.close()
+    except Exception:
+        pass  # the pump reports the exit if it died before reading its input
+    c["pump"] = asyncio.create_task(_dsh_pump(c, proc))
+
+
+async def _dsh_pump(c, proc):
+    """Map DSH's NDJSON run events to the explorer's chat events until the process exits."""
+    done = False
+    last_text = False
+    err_task = asyncio.create_task(proc.stderr.read())
+    try:
+        async for line in proc.stdout:
+            try:
+                m = json.loads(line)
+            except ValueError:
+                continue
+            t = m.get("type")
+            if t == "session":
+                sid = m.get("sessionId")
+                if sid:
+                    if _dsh_session(c["session"]) != sid:
+                        _meta_set(c["session"], dsh_session=sid)
+            elif t == "text":
+                text = m.get("text") or ""
+                if not text:
+                    continue
+                c["busy"] = True
+                if last_text:  # separate blocks from different steps, without making the UI a token stream
+                    _emit(c, {"t": "text", "text": "\n\n"})
+                _emit(c, {"t": "text", "text": text})
+                last_text = True
+            elif t == "tool_call":
+                c["busy"] = True
+                last_text = False
+                _emit(c, {"t": "tool", "id": m.get("callId"), "input": m.get("input") or {},
+                          "name": (m.get("tool") or "tool").removeprefix("mcp__explorer__")})
+            elif t == "tool_result":
+                last_text = False
+                out = m.get("result")
+                if not isinstance(out, str):
+                    out = "" if out is None else json.dumps(out, ensure_ascii=False)
+                _emit(c, {"t": "tool_result", "id": m.get("callId"),
+                          "error": m.get("status") not in (None, "completed", "success"),
+                          "output": out[:1500] + (f" … ({len(out)} chars)" if len(out) > 1500 else "")})
+            elif t == "final":
+                reason = m.get("reason") or {}
+                if reason.get("kind") != "completed":
+                    err = reason.get("error")
+                    msg = err.get("message") if isinstance(err, dict) else err
+                    _emit(c, {"t": "error", "error": str(msg or reason.get("kind") or "DSH stopped")[:600]})
+                done = True
+                last_text = False
+                c["busy"] = False
+                _emit(c, {"t": "done"})
+                c["turn"] = []
+            # thinking/status carry no content the panel shows; text arrives as complete blocks
+    finally:
+        try:
+            err_text = (await err_task).decode(errors="replace")
+        except Exception:
+            err_text = ""
+        try:
+            code = await proc.wait()
+        except Exception:
+            code = None
+        if c.get("proc") is proc:
+            c["proc"] = None
+            c["busy"] = False
+            if not done:
+                if not c.get("stopping"):
+                    _emit(c, {"t": "error", "error": err_text.strip()[-600:] or f"dsh exited {code}"})
+                _emit(c, {"t": "done"})
+                c["turn"] = []
+        # a message sent mid-turn waits for the process to end, then runs as its own turn. The lock keeps a send
+        # racing this cleanup from starting two processes for the same chat.
+        if c.get("dsh_queue"):
+            async with c.setdefault("dsh_lock", asyncio.Lock()):
+                if c.get("proc") is None and c.get("dsh_queue"):
+                    await _dsh_start(c, c["dsh_queue"].pop(0))
+
+
+async def _dsh_send(c, msg, shown, attachments):
+    err = await asyncio.to_thread(_prepare_dsh)
+    if err:
+        return err
+    if not _dsh_api_key():
+        return {"error": "DSH needs a DeepSeek API key: export DEEPSEEK_API_KEY, or store it in "
+                         "~/.dsh/.credentials.yaml under refs.DEEPSEEK_API_KEY.",
+                "code": "dsh_no_api_key"}
+    item = {"prompt": _dsh_message(msg, attachments), "shown": shown}
+    lock = c.setdefault("dsh_lock", asyncio.Lock())
+    async with lock:
+        if c.get("proc") is not None and c["proc"].returncode is None:
+            c.setdefault("dsh_queue", []).append(item)
+            return {"ok": True, "queued": True}
+        await _dsh_start(c, item)
+    return {"ok": True}
+
+
 async def _ensure_proc(c):
     import time
     # a chat between turns picks up changed tools or instructions: its process restarts, resuming the conversation
@@ -1686,7 +2073,8 @@ async def _write(proc, obj):
 @app.post("/api/agent/send")
 async def agent_send(req: Request):
     """A message into a chat: {chat, message, layer?, n? or head?, attachments?: [upload ids]}. Starts (or resumes) the
-    chat's claude process if needed. Mid-turn, the message reaches Claude between tool calls. Events arrive on
+    chat's process if needed: a persistent claude session, a codex thread, or a new dsh process per turn. Mid-turn, a
+    claude/codex message goes straight in; a DSH message waits for the running turn to end. Events arrive on
     /api/agent/events."""
     import time
     b = await req.json()
@@ -1697,6 +2085,8 @@ async def agent_send(req: Request):
         msg = f"[The person has attention head L{int(b['layer'])} h{int(b['head'])} open in the explorer.]\n\n{msg}"
     elif b.get("layer") is not None:
         msg = f"[The person has L{int(b['layer'])} N{int(b['n'])} open in the explorer.]\n\n{msg}"
+    if c["agent"] == "dsh":
+        return await _dsh_send(c, msg, shown, b.get("attachments") or [])
     if c["agent"] == "codex":
         try:
             await _ensure_proc(c)
@@ -1751,6 +2141,11 @@ async def agent_interrupt(req: Request):
             return {"ok": True, "running": False}
         await _rpc(c, "turn/interrupt", {"threadId": c["thread"], "turnId": c["turn_id"]})
         return {"ok": True, "running": True}
+    if c["agent"] == "dsh":
+        # one process per turn: stopping means ending it (and its MCP server); the chat's session survives on disk
+        c["stopping"] = True
+        await _stop_turn(proc)
+        return {"ok": True, "running": True}
     await _write(proc, {"type": "control_request", "request_id": str(uuid.uuid4()), "request": {"subtype": "interrupt"}})
     return {"ok": True, "running": True}
 
@@ -1782,6 +2177,9 @@ async def agent_events(chat: str):
 
 async def _end_chat(c):
     """Ends a chat's process now (and its background commands)."""
+    c.setdefault("dsh_queue", []).clear()
+    c["stopping"] = True
+    c["busy"] = False
     proc = c.get("proc")
     c["proc"] = None
     await _stop_turn(proc)

@@ -967,11 +967,19 @@ function saveAgent() {
   try { localStorage.setItem(AGENT_KEY, JSON.stringify({ chat: agent.chat, kind: agent.kind, html: $("#a-thread").innerHTML })); } catch {}
 }
 // which agent the chat runs on: the tab is named after it, and the dropdown picks it for the next new chat
+const AGENT_LABELS = { claude: "Claude", codex: "Codex", dsh: "DSH" };
 function setAgentKind(kind) {
-  agent.kind = kind === "codex" ? "codex" : "claude";
+  agent.kind = Object.hasOwn(AGENT_LABELS, kind) ? kind : "claude";
   $("#a-agent").value = agent.kind;
-  $('#tabs button[data-tab="claude"]').textContent = agent.kind === "codex" ? "Codex" : "Claude";
+  $('#tabs button[data-tab="claude"]').textContent = AGENT_LABELS[agent.kind];
+  $("#a-input").placeholder = t(`agent.ask.${agent.kind}`);
+  $("#a-input").title = t(`agent.inputTitle.${agent.kind}`);
 }
+function agentError(r) {
+  if (r && r.code) { const s = t(`agent.err.${r.code}`); if (s !== `agent.err.${r.code}`) return s; }
+  return String((r && r.error) || r || "");
+}
+document.addEventListener("i18nchange", () => { if (agent && agent.kind) setAgentKind(agent.kind); });
 $("#a-agent").addEventListener("change", e => {
   const kind = e.target.value;
   try { localStorage.setItem("explorer.agentKind", kind); } catch {}
@@ -1156,7 +1164,7 @@ async function agentTurn(message, shown, shownCls = "user", atts = []) {
   try {
     const r = await api("/api/agent/send", { chat: agent.chat, agent: agent.kind, message, attachments: atts.map(a => a.id),
       ...(f && f.kind === "neuron" ? { layer: f.layer, n: f.n } : f && f.kind === "head" ? { layer: f.layer, head: f.n } : {}) });
-    if (r.error) throw new Error(r.error);
+    if (r.error) throw new Error(agentError(r));
   } catch (err) {
     const d = document.createElement("div"); d.className = "a-err"; d.textContent = String(err.message || err); putInBox(d); finishTurn();
   } finally { agent.sending--; }
@@ -1190,7 +1198,8 @@ async function renderPastList() {
   th.innerHTML = `<div class="dim">…</div>`;
   const list = await api("/api/agent/chats");
   if (pastStash === null) return;
-  th.innerHTML = list.length ? list.map(c => `<button class="a-pastrow${c.chat === agent.chat ? " on" : ""}" data-chat="${c.chat}" data-agent="${c.agent || "claude"}"><span class="t">${esc(c.title || "—")}</span><span class="m">${c.agent === "codex" ? "codex · " : ""}${ago(c.t)} · ${tp("agent.messages", c.turns)}</span></button>`).join("")
+  const tag = a => a === "codex" ? "codex · " : a === "dsh" ? "DSH · " : "";
+  th.innerHTML = list.length ? list.map(c => `<button class="a-pastrow${c.chat === agent.chat ? " on" : ""}" data-chat="${c.chat}" data-agent="${c.agent || "claude"}"><span class="t">${esc(c.title || "—")}</span><span class="m">${tag(c.agent || "claude")}${ago(c.t)} · ${tp("agent.messages", c.turns)}</span></button>`).join("")
     : `<div class="dim">—</div>`;
 }
 async function togglePast() {

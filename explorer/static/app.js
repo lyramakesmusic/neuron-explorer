@@ -1,6 +1,6 @@
 import { createMap } from "./map3d.js?v=78";
 import { createScatter } from "./scatter.js?v=39";
-import { t, tp, initI18n, applyTranslations, getLang } from "./i18n.js?v=1";
+import { t, tp, initI18n, applyTranslations, getLang, localizeError } from "./i18n.js?v=2";
 
 const $ = s => document.querySelector(s);
 const api = async (p, body) => {
@@ -9,12 +9,37 @@ const api = async (p, body) => {
   return r.json();
 };
 initI18n($("#lang"));
-addEventListener("unhandledrejection", e => { const el = document.querySelector("#status"); if (el) el.textContent = String(e.reason?.message || e.reason); });
+let statusError = null;
+addEventListener("unhandledrejection", e => {
+  statusError = e.reason;
+  const el = document.querySelector("#status"); if (el) el.textContent = localizeError(statusError);
+});
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const fmtDose = d => (d > 0 ? "+" : d < 0 ? "−" : "") + Math.abs(d);
+// brand names stay in their own script; never lowercase or translate them as identifiers
+const agentName = kind => (kind === "codex" ? "Codex" : "Claude");
+// backend/network errors keep their raw text in data-raw, so a language switch can relabel them in place
+function errorNode(raw, label) {
+  const d = document.createElement("div");
+  d.className = "err-raw";
+  if (label) d.dataset.label = label;
+  d.dataset.raw = String(raw ?? "");
+  d.textContent = label ? t("error.label", { label, error: localizeError(raw) }) : localizeError(raw);
+  return d;
+}
+function markError(el, raw) { if (!el) return; el.textContent = ""; el.append(errorNode(raw)); }
+function agentError(raw, label) { const d = errorNode(raw, label); d.classList.add("a-err"); return d; }
+function relabelErrors(root = document) {
+  for (const el of root.querySelectorAll(".err-raw")) {
+    if (el.dataset.raw == null) continue;
+    const error = localizeError(el.dataset.raw);
+    el.textContent = el.dataset.label ? t("error.label", { label: el.dataset.label, error }) : error;
+  }
+}
 
 let agentSelecting = false, agentMarked = false;  // Claude's selections and marks (see agentUi); declared early, openNeuron reads them on load
 const state = { layer: null, units: {}, unitMap: {}, focus: null, unit: null, view: "map", chat: { mode: "add", dir: "writes", dose: { add: 0.8, mul: 2 } } };
+let selectedAgent = "claude";  // the dropdown choice, mirrored before the agent state is set up (syncEdge runs during restore)
 const ADD_STEPS = [...Array.from({ length: 30 }, (_, i) => +((i + 1) * 0.05).toFixed(2)), 1.75, 2, 2.5, 3, 4, 5];
 const MUL_STEPS = [...Array.from({ length: 9 }, (_, i) => i * 0.5), 5, 6, 8, 12, 16];
 
@@ -467,7 +492,8 @@ function renderResults(r, ol) {
   const rows = (r.results || []).map(x => `<li class="res${x.swept === false ? " unswept" : ""}" data-l="${x.layer}" data-n="${x.n}" data-kind="neuron">
     <span class="n">L${x.layer} N${x.n}</span><span class="sg ${x.sign === "+" ? "up" : "down"}">${r.fires ? `${x.sign === "+" ? "" : "−"}${x.score.toFixed(1)}×` : `${x.sign === "+" ? "+" : "−"}${x.rank + 1}`}</span>
     <span class="w">${r.fires ? `<span class="tk">"${esc(x.token)}"</span>` : ""}${x.name ? `<b>${esc(x.name)}</b> ` : ""}${esc(x.lens.join(" "))}</span></li>`).join("");
-  const head = r.fires ? t("results.pass", { total: r.total ?? 0 }) : t("results.summary", { total: r.total ?? 0, tokens: r.tokens ?? 0 });
+  const total = r.total ?? 0;
+  const head = r.fires ? tp("results.pass", total, { total }) : tp("results.summary", total, { total, tokens: r.tokens ?? 0 });
   ol.innerHTML = `<li class="head">${head}</li>` + rows;
 }
 // a head chip marks its head on the map while hovered
@@ -537,12 +563,13 @@ function setFocusCollapsed(c) {
   focusEl.classList.toggle("collapsed", c);
   syncEdge(); updateInsets();
 }
-// the right edge handle: brings back a collapsed panel, or opens Claude when no panel is up
+// the right edge handle: brings back a collapsed panel, or opens the agent when no panel is up
 function syncEdge() {
   const on = focusEl.classList.contains("on"), col = focusEl.classList.contains("collapsed"), f = state.focus;
-  const t = $("#focus-tab");
-  t.classList.toggle("on", !on || col);
-  t.textContent = on && col && f && f.kind !== "head" ? `‹ ${f.kind === "random" ? "r" : "N"}${f.n}` : "‹ claude";
+  const tab = $("#focus-tab");
+  tab.classList.toggle("on", !on || col);
+  tab.textContent = on && col && f && f.kind !== "head" ? `‹ ${f.kind === "random" ? "r" : "N"}${f.n}` : t("tabs.agentHandle", { agent: agentName(selectedAgent) });
+  tab.setAttribute("aria-label", t(on && col && f && f.kind !== "head" ? "tabs.showPanel" : "tabs.openAgent"));
 }
 $("#list-hide").onclick = () => setListHidden(true);
 $("#list-tab").onclick = () => setListHidden(false);
@@ -556,7 +583,7 @@ $("#f-close").onclick = () => { flushName(); if (running) running.abort(); state
   map.selectHead(null); state.headInfo = null; state.nheads = null; $("#f-name").style.display = ""; lightHeads(state.inf.pos);
   if (curTab() === "claude") syncTabs(); else focusEl.classList.remove("on");
   setFocusCollapsed(false); map.select(null); refreshWeb(); renderAgentActions(); scatter.select(null, null); saveFocus(); renderList(); };
-document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => setTab(b.dataset.tab));
+document.querySelectorAll("#tabs button[data-tab]").forEach(b => b.onclick = () => setTab(b.dataset.tab));
 const tabBtn = t => $(`#tabs button[data-tab="${t}"]`);
 const curTab = () => $("#tabs button.on")?.dataset.tab;
 function setTab(t) {
@@ -584,6 +611,7 @@ async function openNeuron(layer, n, kind = "neuron", push = true, fly = true) {
   flushName();
   if (running) running.abort();
   state.focus = { layer, n, kind }; state.unit = null;
+  state.lens = null; state.con = null; state.lensError = null; state.conError = null;
   map.selectHead(null); state.headInfo = null; state.nheads = null; $("#f-name").style.display = ""; lightHeads(state.inf.pos);
   if (map.layerMode !== null && map.layerMode !== layer) map.enterLayer(layer);
   if (push && kind === "neuron") saveFocus();
@@ -694,17 +722,22 @@ function renderDetails(u) {
 }
 
 async function loadLive(layer, n) {
+  state.lens = null; state.con = null; state.lensError = null; state.conError = null;
   $("#d-lens") && ($("#d-lens").textContent = "…");
   $("#d-con") && ($("#d-con").textContent = "…");
   const conP = api(`/api/connections?layer=${layer}&n=${n}&k=24`);
   let lens;
   try { lens = await api(`/api/lens?layer=${layer}&n=${n}`); }
-  catch (err) { if (isFocus(layer, n, "neuron") && $("#d-lens")) $("#d-lens").textContent = err.message; }
+  catch (err) { if (isFocus(layer, n, "neuron") && $("#d-lens")) { state.lensError = err.message; markError($("#d-lens"), err.message); } }
   if (!isFocus(layer, n, "neuron")) return;
   conP.then(con => {
     if (!isFocus(layer, n, "neuron")) return;
-    map.setConnections(con); state.con = con; renderConnections();
-  }, err => { if (isFocus(layer, n, "neuron") && $("#d-con")) $("#d-con").textContent = err.message; });
+    state.con = con; map.setConnections(con); renderConnections();
+  }, err => {
+    if (!isFocus(layer, n, "neuron")) return;
+    state.conError = err.message;
+    if ($("#d-con")) markError($("#d-con"), err.message);
+  });
   if (!lens) return;
   state.lens = { ...lens, layer, n }; renderList(); renderLensDetails();
 }
@@ -839,7 +872,7 @@ function renderThread() {
   el.innerHTML = state.thread.map((turn, i) => `<div class="turn" data-i="${i}">
     <div class="user">${esc(turn.user)}<span class="recipe">${turn.mode === "mul" ? "×" : t("chat.add")} ${turn.dose}</span></div>
     <div class="cols">${ROWS.map((c, r) => `<div class="col ${c}${turn.live && !turn.done[r] ? " live" : ""}"><span class="lab">${turnLabels(turn)[r]}</span>${esc(turn.replies[r])}</div>`).join("")}
-    ${turn.error ? `<div class="err">${esc(turn.error)}</div>` : ""}</div></div>`).join("");
+    ${turn.error ? `<div class="err err-raw" data-raw="${esc(turn.error)}">${esc(localizeError(turn.error))}</div>` : ""}</div></div>`).join("");
   el.scrollTop = el.scrollHeight;
 }
 $("#c-clear").onclick = () => { if (running) running.abort(); state.thread = []; renderThread(); };
@@ -893,7 +926,7 @@ async function runReads(f, text) {
   reading = true; $("#c-go").textContent = "…";
   let r;
   try { r = await api("/api/reads", { layer: f.layer, n: f.n, text, chat: true }); }
-  catch (err) { $("#c-reads").textContent = err.message; return; }
+  catch (err) { markError($("#c-reads"), err.message); return; }
   finally { reading = false; $("#c-go").textContent = t("chat.run"); }
   if (!isFocus(f.layer, f.n, "neuron")) return;
   const m = Math.max(1e-6, ...r.units.map(u => Math.abs(u.act)));
@@ -908,11 +941,13 @@ async function runReads(f, text) {
 async function pollStatus() {
   try {
     const s = await api("/api/status");
+    statusError = null;
     state.statusText = s.status;
     $("#status").textContent = localizeStatus(s.status);
     if (s.status === "ready" && lensResults && !lensResults.ready) runLensSearch();
     setTimeout(pollStatus, s.status === "ready" ? 8000 : 2000);
   } catch {
+    statusError = null;
     state.statusText = "server unreachable";
     $("#status").textContent = t("status.unreachable");
     setTimeout(pollStatus, 2000);
@@ -931,7 +966,7 @@ function localizeStatus(s) {
   if (m) return t("status.indexing", { i: m[1], n: m[2] });
   m = s.match(/^measuring neuron ranges (\d+)k\/(\d+)k tokens$/);
   if (m) return t("status.measuring", { seen: m[1], tokens: m[2] });
-  return s;
+  return getLang() === "zh-CN" ? t("status.other", { raw: s }) : s;
 }
 window.__ne = { map, state, scatter };
 // ---------- start ----------
@@ -969,14 +1004,15 @@ function saveAgent() {
 // which agent the chat runs on: the tab is named after it, and the dropdown picks it for the next new chat
 function setAgentKind(kind) {
   agent.kind = kind === "codex" ? "codex" : "claude";
+  selectedAgent = agent.kind;
   $("#a-agent").value = agent.kind;
-  $('#tabs button[data-tab="claude"]').textContent = agent.kind === "codex" ? "Codex" : "Claude";
+  $('#tabs button[data-tab="claude"]').textContent = agentName(agent.kind);
 }
 $("#a-agent").addEventListener("change", e => {
   const kind = e.target.value;
   try { localStorage.setItem("explorer.agentKind", kind); } catch {}
   if (agent.chat || $("#a-thread .a-msg")) { pastStash = null; $("#a-past").classList.remove("on"); resetAgent(); clearAgentMarks(); }
-  setAgentKind(kind);
+  setAgentKind(kind); syncEdge();
 });
 function loadAgent() {
   try {
@@ -986,6 +1022,7 @@ function loadAgent() {
     $("#a-thread").scrollTop = $("#a-thread").scrollHeight;
     addTurnControls();
     relabelAgentThread();
+    relabelErrors();
   } catch {}
 }
 // quick actions above the input, for the open neuron
@@ -1059,12 +1096,16 @@ async function showText(text, token) {
   inferView(); showTokenPaths(pos);
 }
 // a tool call as one short inline line: neuron L15 N6254 · search_lens "Sure"
+function toolName(name) {
+  const raw = String(name || ""), key = `tool.${raw}`, label = t(key);
+  return label === key ? raw.replace(/_/g, " ") : label;
+}
 function toolLabel(name, a = {}) {
   const ref = a.layer != null && a.n != null ? `L${a.layer} N${a.n}` : a.layer != null ? `L${a.layer}` : "";
   const short = s => (s.length > 90 ? s.slice(0, 90) + "…" : s);
   const extra = a.command ? short(a.command) : a.file_path ? a.file_path.replace(/^\/Users\/[^/]+/, "~")
-    : a.pattern ? `"${a.pattern}"` : a.query ? `"${a.query}"` : a.neurons ? t("agent.neurons", { n: a.neurons.length }) : "";
-  return [name.replace(/_/g, " "), ref, extra].filter(Boolean).join(" ");
+    : a.pattern ? `"${a.pattern}"` : a.query ? `"${a.query}"` : a.neurons ? tp("agent.neurons", a.neurons.length) : "";
+  return [toolName(name), ref, extra].filter(Boolean).join(" ");
 }
 function prettyOut(t) {
   try { return JSON.stringify(JSON.parse(t), null, 1); } catch { return t; }
@@ -1132,7 +1173,7 @@ function onAgentEvent(e) {
     agent.segText += e.text; agent.reply += e.text; agent.seg.innerHTML = md(agent.segText);
   } else if (e.t === "tool") { agent.seg = null; putInBox(toolDetails(e)); }
   else if (e.t === "tool_result") { if (agent.box) fillTool(agent.box, e); }
-  else if (e.t === "error") { const d = document.createElement("div"); d.className = "a-err"; d.textContent = e.error; putInBox(d); }
+  else if (e.t === "error") { putInBox(agentError(e.error)); }
   if (stick) th.scrollTop = th.scrollHeight;
 }
 function finishTurn() {
@@ -1158,7 +1199,7 @@ async function agentTurn(message, shown, shownCls = "user", atts = []) {
       ...(f && f.kind === "neuron" ? { layer: f.layer, n: f.n } : f && f.kind === "head" ? { layer: f.layer, head: f.n } : {}) });
     if (r.error) throw new Error(r.error);
   } catch (err) {
-    const d = document.createElement("div"); d.className = "a-err"; d.textContent = String(err.message || err); putInBox(d); finishTurn();
+    const d = agentError(err.message || err); putInBox(d); finishTurn();
   } finally { agent.sending--; }
   return out;
 }
@@ -1170,6 +1211,7 @@ async function stopAgent() {
 }
 function toolDetails(e) {
   const d = document.createElement("details"); d.className = "a-tool"; if (e.id) d.dataset.id = e.id;
+  d.dataset.name = e.name || ""; d.dataset.input = JSON.stringify(e.input || {});
   d.innerHTML = `<summary>${esc(toolLabel(e.name, e.input || {}))}</summary><pre class="a-io"><b>${esc(e.name)}</b> ${esc(JSON.stringify(e.input || {}, null, 1))}</pre><pre class="a-io out running">${t("agent.running")}</pre>`;
   return d;
 }
@@ -1188,9 +1230,11 @@ const ago = ts => {
 async function renderPastList() {
   const th = $("#a-thread");
   th.innerHTML = `<div class="dim">…</div>`;
-  const list = await api("/api/agent/chats");
+  let list;
+  try { list = await api("/api/agent/chats"); }
+  catch (err) { if (pastStash === null) return; th.textContent = ""; th.append(agentError(err.message || err)); return; }
   if (pastStash === null) return;
-  th.innerHTML = list.length ? list.map(c => `<button class="a-pastrow${c.chat === agent.chat ? " on" : ""}" data-chat="${c.chat}" data-agent="${c.agent || "claude"}"><span class="t">${esc(c.title || "—")}</span><span class="m">${c.agent === "codex" ? "codex · " : ""}${ago(c.t)} · ${tp("agent.messages", c.turns)}</span></button>`).join("")
+  th.innerHTML = list.length ? list.map(c => `<button class="a-pastrow${c.chat === agent.chat ? " on" : ""}" data-chat="${c.chat}" data-agent="${c.agent || "claude"}"><span class="t">${esc(c.title || "—")}</span><span class="m">${c.agent === "codex" ? `${agentName("codex")} · ` : ""}${ago(c.t)} · ${tp("agent.messages", c.turns)}</span></button>`).join("")
     : `<div class="dim">—</div>`;
 }
 async function togglePast() {
@@ -1216,7 +1260,7 @@ async function openPast(chat, kind) {
       segText += (segText ? "\n\n" : "") + e.text; seg.innerHTML = md(segText);
     } else if (e.t === "tool") { seg = null; box.append(toolDetails(e)); }
     else if (e.t === "tool_result") fillTool(box, e);
-    else if (e.t === "error") { seg = null; const d = document.createElement("div"); d.className = "a-err"; d.textContent = e.error; box.append(d); }
+    else if (e.t === "error") { seg = null; box.append(agentError(e.error)); }
   }
   closeEvents(); if (agent.busy) { agent.box = null; finishTurn(); }
   agent.chat = chat; setAgentKind(kind); clearAgentMarks(); addTurnControls(); saveAgent(); openEvents();
@@ -1262,7 +1306,7 @@ async function attachFiles(files) {
       const res = await api("/api/agent/upload", { name: a.name, type: file.type, data });
       if (res.error) throw new Error(res.error);
       a.id = res.id;
-    } catch (err) { agent.pending.splice(agent.pending.indexOf(a), 1); addMsg("assistant", `<div class="a-err">${esc(a.name)}: ${esc(String(err.message || err))}</div>`); }
+    } catch (err) { agent.pending.splice(agent.pending.indexOf(a), 1); addMsg("assistant", "").append(agentError(err.message || err, a.name)); }
     renderPending();
   }
 }
@@ -1324,22 +1368,38 @@ function relabelAgentThread() {
   th.querySelectorAll(".a-empty").forEach(el => { el.innerHTML = t("agent.empty"); });
   th.querySelectorAll(".a-stopped").forEach(el => { el.textContent = t("agent.stopped"); });
   th.querySelectorAll("details.a-tool .a-io.out.running").forEach(el => { el.textContent = t("agent.running"); });
+  th.querySelectorAll("details.a-tool").forEach(d => {
+    if (d.dataset.input == null || d.dataset.name == null) return;  // a thread saved before these labels were relabelable
+    let input = {}; try { input = JSON.parse(d.dataset.input || "{}"); } catch {}
+    const s = d.querySelector("summary"); if (s) s.textContent = toolLabel(d.dataset.name || "", input);
+  });
   th.querySelectorAll(".a-ctl button[data-act=edit]").forEach(b => { b.textContent = t("agent.edit"); b.title = t("agent.editTitle"); });
   th.querySelectorAll(".a-ctl button[data-act=reroll]").forEach(b => { b.textContent = t("agent.reroll"); b.title = t("agent.rerollTitle"); });
   const un = $("#a-usename");
-  if (un) un.textContent = t("agent.useName", { name: un.dataset.name || un.textContent.replace(/^use name:\s*/, "").replace(/^使用名称：/, "") });
+  if (un) un.textContent = t("agent.useName", { name: un.dataset.name || "" });
+}
+// a running turn keeps the live column nodes, so relabel them in place instead of redrawing the thread
+function relabelChatThread() {
+  document.querySelectorAll("#c-thread .turn").forEach(el => {
+    const turn = state.thread[+el.dataset.i]; if (!turn) return;
+    const recipe = el.querySelector(".recipe");
+    if (recipe) recipe.textContent = `${turn.mode === "mul" ? "×" : t("chat.add")} ${turn.dose}`;
+    const labels = turnLabels(turn);
+    el.querySelectorAll(".col .lab").forEach((lab, r) => { if (labels[r] != null) lab.textContent = labels[r]; });
+  });
 }
 function relabel() {
   hideTip();
   applyTranslations();
   syncPlaceholders();
-  syncEdge();
   setAgentKind(agent.kind);
+  syncEdge();
   setSendMode(agent.busy);
   $("#c-go").textContent = running ? t("chat.stop") : t("chat.run");
   if (map.layerMode !== null) $("#layer-back").textContent = t("map.allLayers", { l: map.layerMode });
   if (state.webTitle) $("#web-z").title = t("web.title", state.webTitle);
-  if (state.statusText) $("#status").textContent = localizeStatus(state.statusText);
+  if (statusError) $("#status").textContent = localizeError(statusError);
+  else if (state.statusText) $("#status").textContent = localizeStatus(state.statusText);
   const f = state.focus;
   if (f?.kind === "random") $("#f-id").textContent = t("focus.idRandom", { layer: f.layer, n: f.n });
   if ((f?.kind === "neuron" || f?.kind === "random") && state.unit) {
@@ -1348,12 +1408,16 @@ function relabel() {
     renderDetails(state.unit);
     renderLensDetails();
     renderConnections();
+    if (state.lensError && !state.lens) markError($("#d-lens"), state.lensError);
+    if (state.conError && !state.con) markError($("#d-con"), state.conError);
   }
   renderList();
   if (fireResults) renderResults(fireResults, $("#run-rows"));
   renderAgentActions();
   if (!running) renderThread();
+  else relabelChatThread();
   relabelAgentThread();
+  relabelErrors();
   if (agent.pending.length) renderPending();
   if (pastStash !== null) renderPastList();
 }

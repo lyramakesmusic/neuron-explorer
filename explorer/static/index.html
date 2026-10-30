@@ -64,7 +64,7 @@
       <ol id="rows" class="rows"></ol>
     </div>
     <div id="lt-run" class="lpane">
-      <textarea id="inf-text" rows="6" placeholder="paste text: see which neurons fire most on each token" spellcheck="false" data-i18n-placeholder="list.infText"></textarea>
+      <textarea id="inf-text" rows="6" placeholder="paste text: see which neurons fire most on each token" aria-label="paste text: see which neurons fire most on each token" spellcheck="false" data-i18n-placeholder="list.infText" data-i18n-aria-label="list.infText"></textarea>
       <div id="infer">
         <div id="inf-toks"></div>
         <div id="inf-filters">
@@ -79,9 +79,9 @@
   </aside>
 
   <button id="list-tab" class="tab-edge left" aria-label="show list" data-i18n-aria-label="list.show">›</button>
-  <button id="focus-tab" class="tab-edge right mono" aria-label="show neuron" data-i18n-aria-label="tabs.showNeuron"></button>
+  <button id="focus-tab" class="tab-edge right mono" aria-label="open conversation" data-i18n-aria-label="tabs.openAgent"></button>
   <aside id="focus" class="float">
-    <nav id="tabs"><button data-tab="examples" class="on" data-i18n="tabs.examples">Examples</button><button data-tab="chat" data-i18n="tabs.chat">Chat</button><button data-tab="details" data-i18n="tabs.details">Details</button><button data-tab="claude">Claude</button><select id="a-agent" class="mono dim" title="agent for new conversations" data-i18n-title="tabs.agent"><option value="claude">claude</option><option value="codex">codex</option></select><button id="a-past" class="mono dim" title="past conversations" data-i18n-title="tabs.pastTitle" data-i18n="tabs.past">past</button><button id="a-new" class="mono dim" title="start a new conversation" data-i18n-title="tabs.newTitle" data-i18n="tabs.new">new</button><button id="f-collapse" class="edge" aria-label="collapse" data-i18n-aria-label="tabs.collapse">›</button></nav>
+    <nav id="tabs"><button data-tab="examples" class="on" data-i18n="tabs.examples">Examples</button><button data-tab="chat" data-i18n="tabs.chat">Chat</button><button data-tab="details" data-i18n="tabs.details">Details</button><button data-tab="claude">Claude</button><select id="a-agent" class="mono dim" title="agent for new conversations" aria-label="agent for new conversations" data-i18n-title="tabs.agent" data-i18n-aria-label="tabs.agent"><option value="claude">Claude</option><option value="codex">Codex</option></select><button id="a-past" class="mono dim" title="past conversations" data-i18n-title="tabs.pastTitle" data-i18n="tabs.past">past</button><button id="a-new" class="mono dim" title="start a new conversation" data-i18n-title="tabs.newTitle" data-i18n="tabs.new">new</button><button id="f-collapse" class="edge" aria-label="collapse" data-i18n-aria-label="tabs.collapse">›</button></nav>
     <div id="tab-examples" class="tab on"></div>
     <div id="tab-chat" class="tab">
       <div id="c-lens"></div>
@@ -94,7 +94,7 @@
           <span class="stepper"><button type="button" id="c-minus" aria-label="smaller" data-i18n-aria-label="chat.smaller">−</button><input id="c-dose" class="mono" inputmode="decimal" aria-label="dose" value="0.8" data-i18n-aria-label="chat.dose"><button type="button" id="c-plus" aria-label="larger" data-i18n-aria-label="chat.larger">+</button></span>
           <button type="button" id="c-clear" class="dim" data-i18n="chat.clear">clear</button>
         </div>
-        <div class="row"><input id="c-input" placeholder="Who are you?" autocomplete="off" data-i18n-placeholder="chat.who"><button id="c-go" type="submit" data-i18n="chat.run">run</button></div>
+        <div class="row"><input id="c-input" placeholder="Who are you?" aria-label="Who are you?" autocomplete="off" data-i18n-placeholder="chat.who" data-i18n-aria-label="chat.who"><button id="c-go" type="submit" data-i18n="chat.run">run</button></div>
       </form>
     </div>
     <div id="tab-details" class="tab"></div>
@@ -102,10 +102,10 @@
       <div id="a-thread"><div class="a-empty dim" data-i18n-html="agent.empty">Ask anything about the model, or open a neuron and press <b>explain</b>.</div></div>
       <div id="a-actions"></div>
       <div id="a-files"></div>
-      <form id="a-form"><button id="a-attach" type="button" title="attach files (or drop / paste them)" aria-label="attach" data-i18n-title="agent.attachTitle" data-i18n-aria-label="agent.attach">📎</button><input id="a-file" type="file" multiple hidden><textarea id="a-input" rows="1" placeholder="Ask Claude…" title="while Claude works: Enter interrupts and sends, ⌘/Ctrl+Enter queues" spellcheck="false" data-i18n-placeholder="agent.ask" data-i18n-title="agent.inputTitle"></textarea><button id="a-send" type="submit" aria-label="send" data-i18n-aria-label="agent.send">↑</button></form>
+      <form id="a-form"><button id="a-attach" type="button" title="attach files (or drop / paste them)" aria-label="attach" data-i18n-title="agent.attachTitle" data-i18n-aria-label="agent.attach">📎</button><input id="a-file" type="file" multiple hidden><textarea id="a-input" rows="1" placeholder="Ask Claude…" aria-label="Ask Claude…" title="while Claude works: Enter interrupts and sends, ⌘/Ctrl+Enter queues" spellcheck="false" data-i18n-placeholder="agent.ask" data-i18n-aria-label="agent.ask" data-i18n-title="agent.inputTitle"></textarea><button id="a-send" type="submit" aria-label="send" data-i18n-aria-label="agent.send">↑</button></form>
     </div>
   </aside>
 </main>
-<script type="module" src="app.js?v=125"></script>
+<script type="module" src="app.js?v=126"></script>
 </body>
 </html>

@@ -32,6 +32,19 @@ steered chat, lens, connections and live inference over your own text.
   `explorer/agent_prompt.local.md` when present (untracked, for your own additions);
   `EXPLORER_CLAUDE_MODEL` picks the model. The server answers only pages and tools on this machine.
 
+## Updating
+
+The explorer can update itself from the author's `main` branch. In the header, the ⟳ button checks
+`lyramakesmusic/neuron-explorer` and, when a fast-forward is possible, offers **Update and restart**. The server then
+fast-forwards the checkout, runs `uv sync` if needed, and re-execs itself; the page reloads when the new process is up.
+
+Updates are git-only by design: the working tree must be clean, local commits may not diverge, and the data
+directories (`runs/`, `stats/`, `captures/`, caches, names) are gitignored so they are never touched. A failed
+dependency sync rolls the checkout back to the previous commit. `EXPLORER_UPSTREAM` can point at a mirror or a local
+clone for testing; it defaults to the author's GitHub repository. This requires the update feature to be present in
+the upstream branch you are updating to (i.e. after this change is merged); before that, it will correctly report
+that the checkout is already up to date or that local commits exist.
+
 ## Sweep
 
 Runs on a CUDA 13 GPU pod with the steering fork of vLLM ([RhizoNymph/vllm](https://github.com/RhizoNymph/vllm)).

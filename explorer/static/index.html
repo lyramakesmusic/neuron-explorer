@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Neuron Explorer</title>
-<link rel="stylesheet" href="style.css?v=67">
+<link rel="stylesheet" href="style.css?v=68">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect width=%2216%22 height=%2216%22 rx=%223%22 fill=%22%23151515%22/%3E%3Ccircle cx=%228%22 cy=%228%22 r=%222.5%22 fill=%22%23ffd27a%22/%3E%3C/svg%3E">
 <script type="importmap">
 {"imports": {
@@ -26,6 +26,7 @@
   <span class="seg" id="q-mode"><button data-q="lens" class="on" data-i18n="header.lens">lens</button><button data-q="fires" data-i18n="header.fires">fires</button></span>
   <input id="lens-q" placeholder="search lens" aria-label="search" spellcheck="false" autocomplete="off" data-i18n-placeholder="header.searchLens" data-i18n-aria-label="header.search">
   <span id="status" class="mono"></span>
+  <button id="update-check" class="mono dim" title="check for updates" aria-label="check for updates" data-i18n-title="update.check" data-i18n-aria-label="update.check">⟳</button>
   <select id="lang" aria-label="Language" title="Language" data-i18n-aria-label="header.language" data-i18n-title="header.language">
     <option value="en">EN</option>
     <option value="zh-CN">中文</option>
@@ -106,6 +107,6 @@
     </div>
   </aside>
 </main>
-<script type="module" src="app.js?v=125"></script>
+<script type="module" src="app.js?v=126"></script>
 </body>
 </html>

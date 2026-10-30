@@ -9,6 +9,7 @@ import json
 import os
 import sys
 import threading
+import uuid
 
 import numpy as np
 import uvicorn
@@ -22,6 +23,7 @@ sys.path.insert(0, os.path.join(ROOT, "sweep"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rank import compute_units  # noqa: E402
 from runtime import CACHE, NO_MODEL, Runtime  # noqa: E402
+from update import UpdateError, apply_update, check as update_check  # noqa: E402
 
 RUNS, STATS = os.path.join(ROOT, "runs"), os.path.join(ROOT, "stats")
 # the agent's neuronary.org tools (agent_mcp.py) read the person's token from here when set
@@ -35,6 +37,7 @@ ARCH = {"n_layers": _cfg.num_hidden_layers, "hidden": _cfg.hidden_size, "inter":
         "linear_v_heads": _cfg.linear_num_value_heads}
 
 app = FastAPI()
+BOOT_ID = uuid.uuid4().hex  # changes on /api/update/restart so the page can tell when new code is live
 
 
 # only this machine's own pages and tools: a page on another site (or a DNS name rebound to 127.0.0.1) can't reach
@@ -1804,6 +1807,46 @@ async def _reap_chats():
 @app.on_event("startup")
 async def _start_reaper():
     asyncio.create_task(_reap_chats())
+
+
+@app.get("/api/update/check")
+def api_update_check():
+    """Check the author's main branch without touching the working tree."""
+    try:
+        return update_check()
+    except UpdateError as e:
+        return {"ok": False, "code": e.code, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/update/apply")
+def api_update_apply():
+    """Fast-forward to upstream main and reconcile dependencies.  Data directories are gitignored and untouched."""
+    try:
+        return apply_update()
+    except UpdateError as e:
+        return {"ok": False, "code": e.code, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/api/update/status")
+def api_update_status():
+    """The boot id changes only when the process is re-exec'd (or manually restarted)."""
+    return {"ok": True, "boot": BOOT_ID, "pid": os.getpid()}
+
+
+@app.post("/api/update/restart")
+def api_update_restart():
+    """Re-exec this server after the response has been sent, so new code and static files load."""
+    import time
+    def go():
+        time.sleep(0.8)
+        env = {**os.environ, "PORT": str(PORT)}
+        os.execve(sys.executable, [sys.executable, os.path.join(ROOT, "explorer", "server.py")], env)
+    threading.Thread(target=go, daemon=True).start()
+    return {"ok": True, "boot": BOOT_ID}
 
 
 @app.get("/api/status")

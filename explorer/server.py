@@ -160,27 +160,28 @@ def units(layer: int):
         return []
     nm = names()
     return [{"kind": u["kind"], "n": u["neuron"], "z": u.get("mass", u["z"]), "null_pct": u["null_pct"],
-             "words": [w for w, _, _ in u["words"][:5]], "name": nm.get(f"L{layer}/N{u['neuron']}", "")}
+             "words": [w for w, _, _ in u["words"][:5]],
+             "name": nm.get(f"L{layer}/N{u['neuron']}", "") if u["kind"] == "neuron" else ""}
             for u in d["units"]]
 
 
 @app.get("/api/unit")
 def unit(layer: int, n: int, kind: str = "neuron"):
     d = load_layer(layer)
-    out = {"layer": layer, "n": n, "kind": kind, "name": names().get(f"L{layer}/N{n}", "")}
+    out = {"layer": layer, "n": n, "kind": kind, "name": names().get(f"L{layer}/N{n}", "") if kind == "neuron" else ""}
     if d is None:
         return out
     rec = next((u for u in d["units"] if u["neuron"] == n and u["kind"] == kind), None)
     rows = [d["rows"][i] for i in d["by_unit"].get((kind, n), [])]
     base = [r for r in d["rows"] if r["kind"] == "baseline"]
     keep = ("prompt", "dose", "rel_push", "text", "finish", "n_gen")
-    neurons = [u for u in d["units"] if u["kind"] == "neuron"]
+    same = [u for u in d["units"] if u["kind"] == kind]  # random controls share index numbers with neurons
     out.update({
         "run": os.path.basename(d["path"]), "prompts": d["meta"]["prompts"],
         "rollouts": [{k: r[k] for k in keep} for r in rows],
         "baselines": [{k: r[k] for k in keep} for r in base],
-        "stats": rec, "rank": next((i + 1 for i, u in enumerate(neurons) if u["neuron"] == n), None) if rec else None,
-        "n_ranked": len(neurons),
+        "stats": rec, "rank": next((i + 1 for i, u in enumerate(same) if u["neuron"] == n), None),
+        "n_ranked": len(same),
     })
     return out
 

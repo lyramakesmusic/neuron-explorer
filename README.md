@@ -59,6 +59,7 @@ and {free} × {+3}, plus one unsteered baseline per prompt.
 | `sweep/steer_lens.py` | `stats/steer_lens_L{l}.npz`: next-token Δlogprob and KL for ±0.8 pushes on every neuron |
 | `sweep/depth_report.py` | `runs/depth_report.json`: per-layer share of neurons above controls, coherence, top units |
 | `sweep/shift.py` | word-shift score against controls, all words counted |
+| `sweep/embed_shift.py` | `runs/<run>.eshift.jsonl`: embedding-space displacement from controls and its consistency across prompts, needs `<run>.emb.npy` |
 | `sweep/merge_runs.py` | joins sharded runs of one layer |
 | `sweep/check_equivalence.py` | HF vs vLLM steering and capture agreement |
 | `sweep/bench.py`, `sweep/peek.py` | throughput conditions; terminal views of a run |

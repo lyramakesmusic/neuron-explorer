@@ -27,3 +27,9 @@ explorer/cache/head_profiles.json
 
 # experiment scripts
 scripts/
+
+# R / J++ lens release (downloaded)
+explorer/cache/rjpp/
+explorer/cache/jlens/
+explorer/cache/ffw/
+explorer/cache/slens/

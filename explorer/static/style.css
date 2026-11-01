@@ -337,3 +337,14 @@ tr.con .logit .tok { font-size: 10.5px; }
 #net .lrow { display: flex; gap: 6px; align-items: baseline; margin-bottom: 3px; }
 #net .lrow .sgn { flex: none; width: 1em; font-family: var(--mono); }
 #net .lrow .sgn.up { color: var(--up); } #net .lrow .sgn.down { color: var(--down); }
+
+/* FineFineWeb contexts: left context clipped at its start, peak centred, then domain and peak activation */
+.ex .ctx { display: flex; align-items: baseline; gap: 0; font-size: 12px; line-height: 1.55; white-space: pre; cursor: default; }
+.ex .ctx .l { flex: 1 1 0; min-width: 0; overflow: hidden; display: flex; justify-content: flex-end; color: var(--dim); }
+.ex .ctx .p { flex: none; color: var(--sel); }
+.ex .ctx .r { flex: 1 1 0; min-width: 0; overflow: hidden; color: var(--dim); }
+.ex .ctx span span { border-radius: 2px; }
+.ex .ctx .d { flex: none; width: 92px; margin-left: 8px; overflow: hidden; text-overflow: ellipsis; font: 10.5px var(--mono); color: var(--faint); }
+.ex .ctx .v { flex: none; width: 34px; text-align: right; font: 10.5px var(--mono); color: var(--faint); font-variant-numeric: tabular-nums; }
+.ex .lrow { margin-top: 6px; }
+.ex .chip { cursor: default; } .ex .chip:hover { background: var(--raise); }

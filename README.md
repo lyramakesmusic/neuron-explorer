@@ -14,13 +14,19 @@ Reads sweep runs from `runs/` and per-layer stats from `stats/`, both produced b
 `explorer/cache/` ship with the repo. Loads Qwen3.5-4B locally (MPS, CUDA or CPU) for live
 steered chat, lens, connections and live inference over your own text.
 
+The R and J++ lens rows read the maps of [bubskee/qwen3.5-4b-r-jpp-lenses](https://huggingface.co/bubskee/qwen3.5-4b-r-jpp-lenses)
+(Apache-2.0):
+
+    hf download bubskee/qwen3.5-4b-r-jpp-lenses --local-dir explorer/cache/rjpp
+
 - **map**: the model's layers in perspective, attention and MLP per layer, one point per neuron. Hover shows a neuron's
-  steer lens and logit lens; click opens it; click a layer's label to view its sheet face-on. `writes` places
+  steer lens and R lens; click opens it; click a layer's label to view its sheet face-on. `writes` places
   neurons with similar down-projection columns next to each other.
-- **list**: units ranked by word-cluster mass against random-direction controls; `lens` searches the steer and logit
+- **list**: units ranked by word-cluster mass against random-direction controls; `lens` searches the steer, R and logit
   lenses for a token, `fires` runs your text through the model and filters neurons by activation.
 - **neuron**: steered rollouts per prompt and dose, a three-column multi-turn steered chat (−, 0, +), lens and
-  connections, and a name.
+  connections, a name, and where it fires on web text: its strongest FineFineWeb contexts per sign, each token shaded
+  by the neuron's activation, and the domains it concentrates in.
 - **embeddings**: UMAP of a layer's rollouts, coloured by neuron, prompt, dose or kind.
 - **language**: the interface follows the browser language on first visit; the menu at the right of the header
   switches between English and Simplified Chinese (the choice is kept in this browser). Translations live in
@@ -59,6 +65,10 @@ and {free} × {+3}, plus one unsteered baseline per prompt.
 | `explorer/build_embeddings.py` | `runs/<run>.umap.json` |
 | `explorer/build_layout.py` | `explorer/cache/layout_writes.npz` |
 | `explorer/build_connections.py` | `explorer/cache/connections.npz`: each neuron's 24 strongest direct-path links up and down |
+| `sweep/fit_input_lens.py` | `S.pt`: the fitted input map S_L (token embeddings to the residual each MLP reads, layers 0–31), RelP rules of safety-research/jpp_lens; shards over prompts, merged by `num_prompts`; copy to `explorer/cache/slens/S.pt` |
+| `explorer/build_s_index.py` | `explorer/cache/s_index.npz`: each neuron's top S-lens (read side) tokens, both poles |
+| `explorer/build_rjpp_index.py` | `explorer/cache/r_index.npz`, `jpp_index.npz`: each neuron's top R- and J++-lens tokens, both poles (needs the R/J++ release in `explorer/cache/rjpp/`) |
+| `sweep/finefineweb.py` | `<out>/corpus.npz`, `urls.json`, `acts.npz`: a domain-balanced FineFineWeb sample (about 20M tokens over 66 domains) and every neuron's top contexts per sign and per-domain activation statistics; copy the three files to `explorer/cache/ffw/` |
 | `sweep/capture_prefill.py` | `captures/<run>.mlp_in.npy`: MLP input at the last prompt token at the run's capture layers, steered |
 
 `research_log.md` holds the findings and reasoning; `NOTES.md` the source notes.

@@ -22,10 +22,16 @@ HEAD = {"layer": {"type": "integer", "description": "layer, 0-31"}, "head": {"ty
 TOOLS = [
     {"name": "overview", "description": "Model architecture and which layers have sweep runs (rollouts and rankings).",
      "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "neuron", "description": "Everything cached for one neuron: name, logit lens and steer lens (with KL) for "
-     "both poles, activation range, sweep rank if any, and its 24 strongest direct-path links each way (writes_into, "
+    {"name": "neuron", "description": "Everything cached for one neuron: name, logit lens, R and J++ lens (`rjpp`), S lens of "
+     "its read side (`s_lens`), and steer lens (with KL) for both poles, activation range, sweep rank if any, and its 24 strongest direct-path links each way (writes_into, "
      "reads_from) with each linked neuron's steer lens, top words and name.",
      "inputSchema": {"type": "object", "properties": LN, "required": ["layer", "n"]}},
+    {"name": "exemplars", "description": "Where a neuron fires hardest on web text (about 20M tokens of FineFineWeb, "
+     "66 domains): for each sign, its strongest contexts (one per document) with the peak token in [[ ]], the peak "
+     "activation, the domain, and the other tokens in the window where it is at least half the peak (from a live "
+     "trace); plus the domains it concentrates in (lift: its mean activation per token in that domain over the mean "
+     "across all domains) and its activation range, mean and std over the whole corpus.",
+     "inputSchema": {"type": "object", "properties": {**LN, "k": {"type": "integer", "default": 8}}, "required": ["layer", "n"]}},
     {"name": "rollouts", "description": "Sweep rollouts for a neuron: steered text per prompt and dose beside the "
      "unsteered baselines, distinctive words and stats. Empty when the layer has no sweep run.",
      "inputSchema": {"type": "object", "properties": {**LN, "max_chars": {"type": "integer", "default": 500}},
@@ -44,7 +50,7 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {**LN, "first": {"type": "integer", "default": 5},
                                                        "k": {"type": "integer", "default": 2}},
                      "required": ["layer", "n"]}},
-    {"name": "search_lens", "description": "Neurons whose logit lens or steer lens (top 12, either pole) contains a token "
+    {"name": "search_lens", "description": "Neurons whose logit, R or steer lens (top 12, either pole) contains a token "
      "matching the query (case-insensitive substring). Best matches first.",
      "inputSchema": {"type": "object", "properties": {"query": {"type": "string"},
                                                        "limit": {"type": "integer", "default": 40}},
@@ -306,11 +312,194 @@ def neuronary(method, path, body=None, params=None):
         raise ValueError(f"neuronary {e.code}: {msg}") from None
 
 
+# ---------- neuronary atlas: a neuron's readouts and interpretations ----------
+LN_ = {"layer": {"type": "integer"}, "n": {"type": "integer"}}
+
+ATLAS_TOOLS = [
+    {"name": "neuronary_neuron", "description": "What neuronary.org has on one neuron of this model: everyone's "
+     "interpretations (text, confidence, who), its readouts, and the recipes that use it.",
+     "inputSchema": {"type": "object", "properties": LN_, "required": ["layer", "n"]}},
+    {"name": "neuronary_readouts", "description": "Re-send this neuron's readouts to neuronary.org: the explorer's own "
+     "readout panels (logit, steer, R, J++ and S lenses, activation range, FineFineWeb contexts with per-token heat, net, "
+     "heads), gathered automatically. Usually unnecessary: readouts go up by themselves the first time a neuron is "
+     "interpreted or published. Use it when the explorer has gained a readout neuronary doesn't have yet (a new lens): "
+     "extra_fields is only for such readouts the automatic gather doesn't cover, as neuronary blocks, never for prose, "
+     "arguments or your own tests. only: send just these block names.",
+     "inputSchema": {"type": "object", "properties": {
+         **LN_, "extra_fields": {"type": "array", "items": {"type": "object"}},
+         "only": {"type": "array", "items": {"type": "string"}, "description": "send just these block names"}},
+                     "required": ["layer", "n"]}},
+    {"name": "neuronary_interpret", "description": "Post (or replace) the person's interpretation of one neuron on "
+     "neuronary.org, like a reproduction: text covers both poles, e.g. '(+) ascribes a measured attribute (of density, has "
+     "a thickness); (−) copula predication (flow is turbulent)'; confidence 0-1 is how sure, honestly (under 0.3 shows as "
+     "questionable). The neuron's readouts are attached automatically if neuronary doesn't have them yet. Only when the "
+     "person asks or agrees; show the text first.",
+     "inputSchema": {"type": "object", "properties": {
+         **LN_, "text": {"type": "string"}, "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+         "method": {"type": "string", "description": "how you got it, e.g. 'lens + 12 steered rollouts at ±0.8'"}},
+                     "required": ["layer", "n", "text", "confidence"]}},
+]
+
+
+def _toks(xs, top=12):
+    """lens lists come as strings, [tok, value] pairs or {tok|token, ...} dicts; neuronary takes tok or [tok, value]"""
+    out = []
+    for x in (xs or [])[:top]:
+        if isinstance(x, str):
+            out.append(x)
+        elif isinstance(x, (list, tuple)) and x:
+            out.append([str(x[0]), round(float(x[1]), 3)] if len(x) > 1 and isinstance(x[1], (int, float)) else str(x[0]))
+        elif isinstance(x, dict):
+            t = x.get("tok", x.get("token", x.get("t")))
+            v = x.get("w", x.get("n", x.get("z", x.get("p"))))
+            if t is not None:
+                out.append([str(t), round(float(v), 3)] if isinstance(v, (int, float)) else str(t))
+    return out
+
+
+def _head_label(h):
+    if isinstance(h, str):
+        return h
+    if isinstance(h, dict):
+        lab = h.get("label") or f"L{h.get('layer')} h{h.get('head', h.get('heads'))}"
+        v = h.get("z", h.get("score", h.get("w")))
+        return [lab, round(float(v), 2)] if isinstance(v, (int, float)) else lab
+    if isinstance(h, (list, tuple)) and h:
+        return [str(h[0]), round(float(h[1]), 2)] if len(h) > 1 and isinstance(h[1], (int, float)) else str(h[0])
+    return str(h)
+
+
+def _readouts(layer, n, trace=True):
+    fields = []
+    try:
+        d = get("/api/agent/neuron", layer=layer, n=n)
+        if d.get("lens_up") or d.get("lens_down"):
+            fields.append({"type": "tokens", "name": "logit lens", "rows": {"+": _toks(d.get("lens_up")), "-": _toks(d.get("lens_down"))}})
+        if d.get("steer_up") or d.get("steer_down"):
+            fields.append({"type": "tokens", "name": "steer lens", "rows": {"+": _toks(d.get("steer_up")), "-": _toks(d.get("steer_down"))}})
+        rj = d.get("rjpp") or {}
+        for name, key in (("R lens", "r"), ("J++ lens", "jpp")):
+            if rj.get(f"{key}_up"):
+                fields.append({"type": "tokens", "name": name, "rows": {"+": _toks(rj[f"{key}_up"]), "-": _toks(rj[f"{key}_down"])}})
+        sl = d.get("s_lens") or {}
+        if sl.get("s_up"):
+            fields.append({"type": "tokens", "name": "S lens", "rows": {"+": _toks(sl["s_up"]), "-": _toks(sl["s_down"])}})
+        act = d.get("activation")
+        if act:
+            items = [["max", act.get("act_max")], ["min", act.get("act_min")]]
+            items += [[k, act[k]] for k in ("mean", "std") if act.get(k) is not None]
+            fields.append({"type": "stats", "name": "activation range", "items": items + [["over tokens", act.get("over_tokens")], ["source", act.get("source")]]})
+    except Exception:
+        pass
+    try:
+        w = get("/api/web/summary", layer=layer, n=n)
+        up, down = w.get("up", {}), w.get("down", {})
+        groups = [g for g in [
+            {"label": "fed by", "sign": "+", "note": f"{up.get('neurons', 0)} upstream neurons", "items": [[x["tok"], x.get("n")] for x in up.get("fed_by", [])[:24]]},
+            {"label": "held back by", "sign": "-", "items": [[x["tok"], x.get("n")] for x in up.get("held_by", [])[:24]]},
+            {"label": "feeds → pushes toward", "sign": "+", "note": f"{down.get('neurons', 0)} downstream neurons", "items": [[x["tok"], x.get("n")] for x in down.get("toward", [])[:24]]},
+            {"label": "feeds → pushes away from", "sign": "-", "items": [[x["tok"], x.get("n")] for x in down.get("away", [])[:24]]},
+        ] if g["items"]]
+        if groups:
+            fields.append({"type": "units", "name": "net", "note": f"{w.get('links', 0)} links · {w.get('src', 'steer')} lens, ranked by lift over each layer", "groups": groups})
+    except Exception:
+        pass
+    try:
+        h = get("/api/neuron/heads", layer=layer, n=n).get("roles") or {}
+        rows = {k: [_head_label(x) for x in (h.get(k) or [])[:8]] for k in ("q", "k", "v", "o")}
+        if any(rows.values()):
+            fields.append({"type": "heads", "name": "heads", "rows": rows})
+    except Exception:
+        pass
+    try:
+        fields += _contexts(layer, n, trace)
+    except Exception:
+        pass
+    return fields
+
+
+def _context_text(r):
+    """A FineFineWeb window as neuronary context text: the peak as ⟦tok⟧, other tokens of the same sign at a third of
+    the peak or more as ⟦tok|heat⟧ (heat = activation / peak, from the live trace)."""
+    out, peak = [], r["act"]
+    for i, t in enumerate(r["tokens"]):
+        t = t.replace("\n", "⏎").replace("⟦", "[").replace("⟧", "]").replace("|", "¦")
+        h = 1.0 if i == r["peak"] else (r["trace"][i] / peak if r.get("trace") and peak else 0)
+        if i == r["peak"]:
+            out.append(f"⟦{t}⟧")
+        elif h >= 0.33:
+            out.append(f"⟦{t}|{min(h, 1):.2f}⟧")
+        else:
+            out.append(t)
+    return "".join(out)
+
+
+def _contexts(layer, n, trace=True):
+    """The neuron's strongest FineFineWeb contexts per sign (8 and 5, one per document) and the domains each pole
+    concentrates in, as one neuronary contexts block; with trace, each window's other strong tokens marked by heat."""
+    e = get("/api/exemplars", layer=layer, n=n, k=8, trace="true" if trace else "false")
+    if not e or not e.get("+"):
+        return []
+    rows = {s: [{"text": _context_text(r), "tag": r["domain"].replace("_", " "), "value": round(r["act"], 3)} for r in e[s][:k]]
+            for s, k in (("+", 8), ("-", 5))}
+    tags = {s: [[d["domain"].replace("_", " "), d["lift"]] for d in e.get(f"domains{s}", []) if d["lift"] >= 1.25][:6] for s in "+-"}
+    note = f"FineFineWeb, {e['tokens'] / 1e6:.0f}M tokens; tags: mean activation per token in the domain over the mean"
+    return [{"type": "contexts", "name": "activations", "note": note, "tags": tags, "rows": rows}]
+
+
+def _neuron(a):
+    return neuronary("GET", f"/neurons/L{int(a['layer'])}N{int(a['n'])}", params={"model": MODEL})  
+
+
+def ensure_readouts(layer, n, trace=True):
+    """Send the neuron's readouts unless neuronary already has some; returns the block names sent (or [])."""
+    try:
+        have = neuronary("GET", f"/neurons/L{layer}N{n}", params={"model": MODEL}).get("readouts") or []
+        if have:
+            return []
+        return _push_readouts({"layer": layer, "n": n}, trace).get("blocks", [])
+    except Exception:
+        return []
+
+
+def _push_readouts(a, trace=True):
+    layer, n = int(a["layer"]), int(a["n"])
+    fields = _readouts(layer, n, trace) + list(a.get("extra_fields") or [])
+    if a.get("only"):
+        keep = {x.lower() for x in a["only"]}
+        fields = [f for f in fields if str(f.get("name", "")).lower() in keep]
+    if not fields:
+        return {"written": 0, "note": "no readouts to send"}
+    r = neuronary("POST", "/readouts", {"model": MODEL, "layer": layer, "neuron": n, "source": "neuron explorer", "fields": fields})
+    r["blocks"] = [f.get("name") for f in fields]
+    r["url"] = f"https://neuronary.org/n/L{layer}N{n}"
+    return r
+
+
+def _interpret(a):
+    layer, n = int(a["layer"]), int(a["n"])
+    body = {"model": MODEL, "layer": layer, "neuron": n, "text": a["text"], "confidence": float(a["confidence"]),
+            "source": "neuron explorer"}
+    if a.get("method"):
+        body["method"] = a["method"]
+    r = neuronary("POST", "/interpretations", body)
+    r["readouts_sent"] = ensure_readouts(layer, n)
+    r["url"] = f"https://neuronary.org/n/L{layer}N{n}"
+    return r
+
+
+ATLAS_HANDLERS = {"neuronary_neuron": _neuron, "neuronary_readouts": _push_readouts, "neuronary_interpret": _interpret}
+
+TOOLS += ATLAS_TOOLS
+
+
 def to_explorer(ns):
     return [{"layer": x["layer"], "n": x["neuron"], "dose": x["dose"]} for x in ns]
 
 
 def call(name, a):
+    if name in ATLAS_HANDLERS:
+        return ATLAS_HANDLERS[name](a)
     if name == "neuronary_search":
         r = neuronary("GET", "/recipes", params={"q": a.get("q"), "tag": a.get("tag"), "author": a.get("author"),
                                                  "sort": a.get("sort"), "limit": a.get("limit", 20)})
@@ -327,7 +516,11 @@ def call(name, a):
         body["neurons"] = [{"layer": int(x["layer"]), "neuron": int(x["n"]), "dose": float(x["dose"])} for x in a["neurons"]]
         if a.get("mode") == "mul":
             body["method"] = {"op": "mul"}
-        return neuronary("POST", "/recipes", body)
+        r = neuronary("POST", "/recipes", body)
+        # the recipe's neurons carry their readouts up with it (peaks only: a live trace per neuron is too slow here)
+        r["readouts_sent"] = {f"L{x['layer']}N{x['neuron']}": ensure_readouts(x["layer"], x["neuron"], trace=False)
+                              for x in body["neurons"]}
+        return r
     if name == "neuronary_update":
         body = {k: v for k, v in a.items() if k not in ("id", "neurons")}
         if a.get("neurons"):
@@ -347,6 +540,18 @@ def call(name, a):
         return get("/api/agent/overview")
     if name == "neuron":
         return get("/api/agent/neuron", layer=a["layer"], n=a["n"])
+    if name == "exemplars":
+        r = get("/api/exemplars", layer=a["layer"], n=a["n"], k=a.get("k", 8), trace="true")
+        if not r:
+            return {"error": "no FineFineWeb sweep in explorer/cache/ffw"}
+        def ctx(x):
+            toks, p = x["tokens"], x["peak"]
+            text = "".join(toks[:p]) + "[[" + toks[p] + "]]" + "".join(toks[p + 1:])
+            hot = [[t, v] for i, (t, v) in enumerate(zip(toks, x.get("trace") or [])) if i != p and v * x["act"] > 0 and abs(v) >= 0.5 * abs(x["act"])]
+            return {"text": text, "act": x["act"], "domain": x["domain"], "also": hot}
+        dom = lambda lst: [f"{d['domain']} {d['lift']}" for d in lst[:6]]
+        return {"range": r["range"], "positive": [ctx(x) for x in r["+"]], "negative": [ctx(x) for x in r["-"]],
+                "domains_positive": dom(r["domains+"]), "domains_negative": dom(r["domains-"])}
     if name == "rollouts":
         u = get("/api/unit", layer=a["layer"], n=a["n"])
         cut = int(a.get("max_chars", 500))

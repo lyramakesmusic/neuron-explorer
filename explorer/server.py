@@ -231,12 +231,22 @@ async def hover(layer: int, n: int):
     con = await asyncio.to_thread(rt.connections, layer, n, 16, 0)
     lens = await asyncio.to_thread(rt.lens, layer, n, 8)
     return {"lens": lens["up"], "lens_neg": lens["down"], "steer": lens.get("steer_up"), "steer_neg": lens.get("steer_down"),
-            "con": con}
+            "r": lens.get("r_up"), "r_neg": lens.get("r_down"), "con": con}
 
 
 @app.get("/api/lens")
 async def lens(layer: int, n: int):
     return await asyncio.to_thread(rt.lens, layer, n, 12)
+
+
+@app.get("/api/lens/rjpp")
+async def lens_rjpp(layer: int, n: int):
+    """The neuron's R and J++ lens readouts (runtime.rjpp_lens): r_up / r_down / jpp_up / jpp_down token lists, or {}
+    for block 31 or when neither the indexes nor the lens release are there."""
+    try:
+        return await asyncio.to_thread(rt.rjpp_lens, layer, n, 12) or {}
+    except RuntimeError:  # no indexes and the live model is off
+        return {}
 
 
 @app.post("/api/reads")
@@ -296,7 +306,7 @@ def lens_index():
 
 @app.get("/api/search")
 async def search(q: str, limit: int = 300):
-    """Neurons whose logit lens (top 12 up or down) contains a token matching q (case-insensitive substring)."""
+    """Neurons whose logit, R or steer lens (top 12 up or down) contains a token matching q (case-insensitive substring)."""
     idx = lens_index()
     q = q.strip().lower()
     if idx is None or len(q) < 2:
@@ -310,13 +320,16 @@ async def search(q: str, limit: int = 300):
     sources = [("+", idx["up"], "lens"), ("-", idx["down"], "lens")]
     if st is not None:
         sources += [("+", st["up"], "steer"), ("-", st["down"], "steer")]
+    ri = rt.r_index()
+    if ri is not None:
+        sources += [("+", ri["up"], "r"), ("-", ri["down"], "r")]
     for sign, arr, src in sources:
         hit = np.isin(arr, match)  # [L, N, k]
         count = hit.sum(-1)
         best = np.where(hit, np.arange(arr.shape[-1]), 99).min(-1)
         for l, n in zip(*np.nonzero(count)):
             out.append((int(best[l, n]), -int(count[l, n]), int(l), int(n), sign, src))
-    # one row per neuron and sign, keeping its best match across the two lenses
+    # one row per neuron and sign, keeping its best match across the lenses
     seen, uniq = set(), []
     for row in sorted(out):
         if (row[2], row[3], row[4]) not in seen:
@@ -325,7 +338,7 @@ async def search(q: str, limit: int = 300):
     nm, res = names(), []
     sw = {l: swept(l) for l in {row[2] for row in out[:limit]}}
     for rank, _, l, n, sign, src in out[:limit]:
-        arr = (idx if src == "lens" else st)["up" if sign == "+" else "down"]
+        arr = {"lens": idx, "steer": st, "r": ri}[src]["up" if sign == "+" else "down"]
         res.append({"layer": l, "n": n, "sign": sign, "rank": rank, "src": src, "name": nm.get(f"L{l}/N{n}", ""),
                     "swept": n in sw[l], "lens": [vocab[t] for t in arr[l, n, :6]]})
     return {"ready": True, "results": res, "tokens": int(len(match)), "total": len(out)}
@@ -812,6 +825,12 @@ _act = {}
 
 
 def act_range(layer, n):
+    f = ffw()
+    if f is not None:
+        mean = f["sum"][layer, n] / f["count"]
+        return {"act_max": round(float(f["top_val"][layer, 0, n]), 3), "act_min": round(float(f["bot_val"][layer, 0, n]), 3),
+                "mean": round(float(mean), 4), "std": round(float(np.sqrt(max(f["sumsq"][layer, n] / f["count"] - mean ** 2, 0))), 4),
+                "over_tokens": f["count"], "source": "FineFineWeb"}
     if "pos" not in _act and os.path.exists(ACT_SCALE):
         z = np.load(ACT_SCALE)
         _act.update(pos=z["pos"], neg=z["neg"], tokens=int(z["tokens"]))
@@ -819,6 +838,69 @@ def act_range(layer, n):
         return None
     return {"act_max": round(float(_act["pos"][layer, n]), 3), "act_min": round(float(_act["neg"][layer, n]), 3),
             "over_tokens": _act["tokens"], "source": "FineWeb-Edu"}
+
+
+FFW = os.path.join(ROOT, "explorer", "cache", "ffw")  # sweep/finefineweb.py output: corpus.npz, urls.json, acts.npz
+_ffw = {}
+
+
+def ffw():
+    """The FineFineWeb sweep: corpus and per-neuron top contexts and domain statistics, or None."""
+    if "count" not in _ffw and os.path.exists(os.path.join(FFW, "acts.npz")):
+        c, a = np.load(os.path.join(FFW, "corpus.npz")), np.load(os.path.join(FFW, "acts.npz"))
+        _ffw.update({k: c[k] for k in c.files}, **{k: a[k] for k in a.files})
+        _ffw["doc_url"] = json.load(open(os.path.join(FFW, "urls.json")))
+        _ffw["count"] = int(_ffw["count"])
+    return _ffw if "count" in _ffw else None
+
+
+@app.get("/api/exemplars")
+async def exemplars(request: Request, layer: int, n: int, k: int = 8, before: int = 24, after: int = 8, trace: bool = False):
+    """Where neuron (layer, n) fires hardest on FineFineWeb: for each sign, its k strongest positions, one per
+    document, as a token window around the peak (peak index, value, domain, url); with trace, the neuron's activation
+    at every token of each window, run live. Plus the domains where its activation is most concentrated: mean positive
+    (and negative) activation per token in the domain over the mean across all domains."""
+    f = ffw()
+    if f is None:
+        return {}
+    vocab = await asyncio.to_thread(rt.vocab_strings)
+    starts, toks = f["doc_start"], f["tokens"]
+    out = {"tokens": f["count"], "range": act_range(layer, n)}
+    for sign, vk, pk in (("+", "top_val", "top_pos"), ("-", "bot_val", "bot_pos")):
+        rows, seen = [], set()
+        for v, p in zip(f[vk][layer, :, n], f[pk][layer, :, n]):
+            if p < 0 or len(rows) >= k:
+                break
+            d = int(np.searchsorted(starts, p, side="right") - 1)
+            if d in seen:
+                continue
+            seen.add(d)
+            s, ln, off = int(starts[d]), int(f["doc_len"][d]), int(p - starts[d])
+            lo, hi = max(0, off - before), min(ln, off + after + 1)
+            rows.append({"doc": d, "domain": str(f["domains"][f["doc_domain"][d]]), "url": f["doc_url"][d],
+                         "act": round(float(v), 3), "peak": off - lo, "start": lo,
+                         "ids": toks[s + lo:s + hi].tolist(), "prefix": toks[s:s + hi].tolist()})
+        if trace and rows and not NO_MODEL:
+            # one document per pass, so the model lock is free between them; stops when the client has gone
+            for r in rows:
+                if await request.is_disconnected():
+                    return {}
+                a = (await asyncio.to_thread(rt.neuron_traces, layer, n, [r["prefix"]]))[0]
+                r["trace"] = [round(float(x), 3) for x in a[r["start"]:]]
+        for r in rows:
+            r["tokens"] = [vocab[t] for t in r.pop("ids")]
+            del r["prefix"]
+        out[sign] = rows
+    cnt = np.maximum(f["dom_count"], 1)
+    doms = [str(d) for d in f["domains"]]
+    for sign, key in (("+", "dom_pos"), ("-", "dom_neg")):
+        per = f[key][:, layer, n] / cnt
+        base = f[key][:, layer, n].sum() / cnt.sum()
+        lift = per / base if base else np.zeros_like(per)
+        order = np.argsort(-lift)
+        out[f"domains{sign}"] = [{"domain": doms[i], "lift": round(float(lift[i]), 2),
+                                  "extreme": round(float(f["dom_max" if sign == "+" else "dom_min"][i, layer, n]), 3)} for i in order[:8]]
+    return out
 
 
 @app.get("/api/agent/overview")
@@ -842,6 +924,8 @@ async def agent_neuron(layer: int, n: int):
            "lens_up": lens["up"], "lens_down": lens["down"],
            "steer_up": lens.get("steer_up"), "steer_down": lens.get("steer_down"),
            "kl_up": lens.get("kl_up"), "kl_down": lens.get("kl_down"),
+           "rjpp": await lens_rjpp(layer, n) or None,
+           "s_lens": {"s_up": lens["s_up"], "s_down": lens["s_down"]} if "s_up" in lens else None,
            "activation": act_range(layer, n),
            "sweep": {"rank": u.get("rank"), "n_ranked": u.get("n_ranked"), "stats": u.get("stats"),
                      "n_rollouts": len(u.get("rollouts", []))} if "run" in u else None}

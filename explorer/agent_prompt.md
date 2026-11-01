@@ -39,8 +39,21 @@ large model about 90% of neurons have one main job, about 7% have two related jo
   "how unusual this link is for that layer pair", not absolute strength; it saturates near 96. `sign` is the sign of the
   reader's activation the writer produces. Each linked neuron comes with its own steer lens (`steer_up`/`steer_down`)
   and, if it has a sweep, top words, so you can read a neuron's neighbourhood without extra calls.
-- **Activation range** (`act_max`, `act_min`): the largest and most negative activation over 10k tokens of FineWeb-Edu.
-  Raw values; do not convert to percentiles.
+- **R / J++ lens** (`rjpp` in `neuron`: `jpp_up`/`jpp_down`, `r_up`/`r_down`): the same down column as the logit lens,
+  first carried from its layer to the last block by a fitted linear map per layer (R: pooled Jacobian statistics; J++:
+  a signed mixture of per-cluster Jacobians), then read through the final norm and unembedding, with tokens that have
+  no letters or digits filtered out. Meant to make early and middle layers readable where the logit lens is noise.
+  Weights only, like the logit lens; a hypothesis to check against steer and activations, not a causal label. Empty
+  for layer 31.
+- **S lens** (`s_lens` in `neuron`: `s_up`/`s_down`): the read side. The neuron's gate and up rows (+ pole: both
+  agree; − pole: they disagree) pulled back through a fitted map from the token embeddings to the residual its MLP
+  reads, then scored against every token: the input tokens whose presence earlier in the context pushes the residual
+  along what this neuron reads. Weights only; check it against `exemplars`.
+- **Activation range** (`act_max`, `act_min`, `mean`, `std`): the largest and most negative activation, mean and std
+  over about 20M tokens of FineFineWeb (66 web domains, English). Raw values; do not convert to percentiles.
+- **Exemplars** (`exemplars`): the read side on web text. The neuron's strongest contexts per sign, one per document,
+  peak in [[ ]], with the other strong tokens in the window, and the domains it concentrates in. A context shows
+  where the neuron is loudest, which is one slice of what it does; a neuron can be causally important and never loud.
 - **Sweep rollouts** (`rollouts`): text the model wrote with the neuron pushed by fixed doses on a few prompts, beside
   unsteered baselines, plus distinctive words and a cluster "mass" ranked against random-direction controls. Only
   layers that have a sweep run have these; many do not yet. If a layer has none, say you are working without them.
@@ -220,6 +233,13 @@ the steered output verbatim, the prompt, and in `note` any dose change it needed
 the same `temperature` / `min_p` / `repetition_penalty` (and a `seed`) before judging it, and say in the report which you used;
 a loop under greedy decoding that a mild penalty (1.05–1.15) removes is a decoding artifact, not a failed recipe. For the person's own recipes, add an
 example with `neuronary_update` instead.
+
+neuronary also keeps two things per neuron, read with `neuronary_neuron`. **Interpretations** are anyone's read of what
+the neuron does, like a reproduction: `neuronary_interpret` with text covering both poles ("(+) …; (−) …") and an honest
+confidence (under 0.3 shows as questionable). **Readouts** are the explorer's own readout panels (lenses, activation range,
+FineFineWeb contexts, net, heads) attached to the neuron as plain data, not evidence for an interpretation: they go up
+by themselves the first time a neuron is interpreted or published. `neuronary_readouts` re-sends them after the explorer
+gains a new lens. Interpretations are public posts: only when the person asks or agrees, and show the text first.
 
 ## This session
 

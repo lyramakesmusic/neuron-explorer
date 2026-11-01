@@ -1,6 +1,6 @@
 import { createMap } from "./map3d.js?v=78";
 import { createScatter } from "./scatter.js?v=39";
-import { t, tp, initI18n, applyTranslations, getLang } from "./i18n.js?v=1";
+import { t, tp, initI18n, applyTranslations, getLang } from "./i18n.js?v=3";
 
 const $ = s => document.querySelector(s);
 const api = async (p, body) => {
@@ -67,7 +67,7 @@ const map = createMap($("#map"), $("#layer-labels"), arch, {
       if (u?.name) rows.push(`<div class="tname">${esc(u.name)}</div>`);
       if (u) rows.push(`<div class="twords">${esc(u.words.join("  "))}</div>`);
       if (h && h.steer) rows.push(`<div class="tl"><span class="sgn up">+</span>${esc(h.steer.join("  "))}</div><div class="tl"><span class="sgn down">−</span>${esc(h.steer_neg.join("  "))}</div>`);
-      if (h) rows.push(`<div class="tl faintline"><span class="sgn up">+</span>${esc(h.lens.join("  "))}</div><div class="tl faintline"><span class="sgn down">−</span>${esc(h.lens_neg.join("  "))}</div>`);
+      if (h) rows.push(`<div class="tl faintline"><span class="sgn up">+</span>${esc((h.r || h.lens).join("  "))}</div><div class="tl faintline"><span class="sgn down">−</span>${esc((h.r_neg || h.lens_neg).join("  "))}</div>`);
       const nh = hoverCache.get(`nh/${key}`);
       if (nh) {
         const top = roleHeads(nh), into = top.filter(k => k.role === "o").slice(0, 3), from = top.filter(k => k.role !== "o").slice(0, 4);
@@ -431,7 +431,34 @@ function lensHTML() {
   const pair = (up, down) => `<div class="lrow"><span class="sgn up">+</span><div class="chips">${chips(up)}</div></div>
     <div class="lrow"><span class="sgn down">−</span><div class="chips">${chips(down)}</div></div>`;
   return (L.steer_up ? `<div class="wsum"><div class="lab">${t("lens.steer", { up: L.kl_up, down: L.kl_down })}</div>${pair(L.steer_up, L.steer_down)}</div>` : "")
-    + `<div class="wsum"><div class="lab">${t("lens.logit")}</div>${pair(L.up, L.down)}</div>`;
+    + `<div class="wsum"><div class="lab">${t("lens.logit")}</div>${pair(L.up, L.down)}</div>`
+    + (L.jpp_up ? `<div class="wsum"><div class="lab">${t("lens.jpp")}</div>${pair(L.jpp_up, L.jpp_down)}</div>` : "")
+    + (L.r_up ? `<div class="wsum"><div class="lab">${t("lens.r")}</div>${pair(L.r_up, L.r_down)}</div>` : "")
+    + (L.s_up ? `<div class="wsum"><div class="lab">${t("lens.s")}</div>${pair(L.s_up, L.s_down)}</div>` : "")
+    + exHTML();
+}
+let exAbort = null;  // the open neuron's pending FineFineWeb request, aborted when another neuron opens
+// where the open neuron fires on FineFineWeb: domains it concentrates in, then its strongest contexts per sign, peak
+// marked; with live traces, every token shaded by the neuron's activation there
+function exHTML() {
+  const X = state.ex, f = state.focus;
+  if (!X?.["+"] || !f || f.kind !== "neuron" || X.layer !== f.layer || X.n !== f.n) return "";
+  const shown = s => s.replace(/\n/g, "⏎");
+  const ctx = (r, sign) => {
+    const top = sign === "+" ? X.range?.act_max : X.range?.act_min, col = sign === "+" ? "255,181,71" : "255,79,154";
+    const span = (tk, i) => {
+      const a = r.trace ? r.trace[i] : (i === r.peak ? r.act : 0), w = top ? Math.max(0, Math.min(1, a / top)) : 0;
+      return `<span${w > 0.04 ? ` style="background:rgba(${col},${(0.12 + 0.6 * w).toFixed(2)})"` : ""}>${esc(shown(tk))}</span>`;
+    };
+    const toks = r.tokens.map(span);
+    return `<div class="ctx" title="${esc(`${r.domain} · ${r.act} · ${r.url}`)}"><span class="l"><span>${toks.slice(0, r.peak).join("")}</span></span>`
+      + `<span class="p">${toks[r.peak]}</span><span class="r">${toks.slice(r.peak + 1).join("")}</span>`
+      + `<span class="d">${esc(r.domain.replace(/_/g, " "))}</span><span class="v">${r.act.toFixed(2)}</span></div>`;
+  };
+  const doms = list => list.filter(d => d.lift >= 1.25).slice(0, 6).map(d => `<span class="chip">${esc(d.domain.replace(/_/g, " "))}<i>${d.lift}</i></span>`).join("");
+  const side = (sign, k) => `<div class="lrow"><span class="sgn ${sign === "+" ? "up" : "down"}">${sign === "+" ? "+" : "−"}</span><div class="chips">${doms(X[`domains${sign}`] || [])}</div></div>`
+    + (X[sign] || []).slice(0, k).map(r => ctx(r, sign)).join("");
+  return `<div class="wsum ex"><div class="lab">FineFineWeb</div>${side("+", 8)}${side("-", 5)}</div>`;
 }
 // a head's strongest neurons in each role, as map links
 const ROLE_COL = { q: "#73ff8c", k: "#b399ff", v: "#66d9ff", o: "#66d9ff" };
@@ -707,6 +734,18 @@ async function loadLive(layer, n) {
   }, err => { if (isFocus(layer, n, "neuron") && $("#d-con")) $("#d-con").textContent = err.message; });
   if (!lens) return;
   state.lens = { ...lens, layer, n }; renderList(); renderLensDetails();
+  // R / J++ lens readouts arrive separately; empty when the indexes and the lens release are both missing
+  api(`/api/lens/rjpp?layer=${layer}&n=${n}`).then(r => {
+    if (r?.jpp_up && state.lens?.layer === layer && state.lens.n === n && isFocus(layer, n, "neuron")) { Object.assign(state.lens, r); renderList(); }
+  }, () => {});
+  // FineFineWeb contexts: the stored peaks first, then the same windows with live per-token traces
+  exAbort?.abort(); exAbort = new AbortController();
+  const signal = exAbort.signal;
+  const ex = trace => fetch(`/api/exemplars?layer=${layer}&n=${n}${trace ? "&trace=1" : ""}`, { signal }).then(r => r.json()).then(r => {
+    if (!r?.["+"] || !isFocus(layer, n, "neuron") || (!trace && state.ex?.layer === layer && state.ex.n === n && state.ex.traced)) return;
+    state.ex = { ...r, layer, n, traced: trace }; renderList();
+  }, () => {});
+  ex(false).then(() => ex(true));
 }
 
 // the open neuron's lenses in Details and above the chat; rendered from state so a language change can redraw it

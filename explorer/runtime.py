@@ -27,6 +27,7 @@ REFERENCE_TEXT = (
 
 
 CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache")
+RJPP = os.path.join(CACHE, "rjpp")  # bubskee/qwen3.5-4b-r-jpp-lenses, downloaded here
 
 
 def _locked(f):
@@ -762,13 +763,33 @@ class Runtime:
                 self._lens_idx = {"up": z["up"], "down": z["down"]}
         return self._lens_idx
 
+    def r_index(self):
+        """R-lens top tokens for every neuron (explorer/build_rjpp_index.py): up, down [L, N, k] token ids."""
+        if getattr(self, "_r_idx", None) is None:
+            path = os.path.join(CACHE, "r_index.npz")
+            self._r_idx = dict(np.load(path)) if os.path.exists(path) else False
+        return self._r_idx or None
+
+    def s_index(self):
+        """S-lens (read side) top tokens for every neuron (explorer/build_s_index.py): up, down [L, N, k] token ids."""
+        if getattr(self, "_s_idx", None) is None:
+            path = os.path.join(CACHE, "s_index.npz")
+            self._s_idx = dict(np.load(path)) if os.path.exists(path) else False
+        return self._s_idx or None
+
+    def jpp_index(self):
+        """J++-lens top tokens for every neuron (explorer/build_rjpp_index.py): up, down [L, N, k] token ids."""
+        if getattr(self, "_jpp_idx", None) is None:
+            path = os.path.join(CACHE, "jpp_index.npz")
+            self._jpp_idx = dict(np.load(path)) if os.path.exists(path) else False
+        return self._jpp_idx or None
+
     def steer_index(self):
         if getattr(self, "_steer_idx", None) is None:
             path = os.path.join(CACHE, "steer_index.npz")
             self._steer_idx = dict(np.load(path)) if os.path.exists(path) else False
         return self._steer_idx or None
 
-    @_locked
     def lens(self, layer, n, k=16):
         idx = self.lens_index()
         if idx is not None and k <= idx["up"].shape[-1]:
@@ -778,6 +799,12 @@ class Runtime:
             if st is not None:
                 out.update(steer_up=[v[t] for t in st["up"][layer, n, :k]], steer_down=[v[t] for t in st["down"][layer, n, :k]],
                            kl_up=round(float(st["up_kl"][layer, n]), 3), kl_down=round(float(st["down_kl"][layer, n]), 3))
+            ri = self.r_index()
+            if ri is not None:
+                out.update(r_up=[v[t] for t in ri["up"][layer, n, :k]], r_down=[v[t] for t in ri["down"][layer, n, :k]])
+            si = self.s_index()
+            if si is not None:
+                out.update(s_up=[v[t] for t in si["up"][layer, n, :k]], s_down=[v[t] for t in si["down"][layer, n, :k]])
             return out
         self.ensure_loaded()
         if (layer, n, k) in self._lens_cache:
@@ -792,8 +819,63 @@ class Runtime:
         self._lens_cache[(layer, n, k)] = out
         return out
 
-    # ---------- connections ----------
+    # ---------- R / J++ workspace lenses (bubskee/qwen3.5-4b-r-jpp-lenses) ----------
+    def rjpp_available(self):
+        return all(os.path.exists(os.path.join(RJPP, f)) for f in ("lenses/r.pt", "lenses/jpp.pt", "excluded_token_ids.json"))
+
+    def _rjpp(self):
+        """The R and J++ transport maps (one FP32 2560x2560 matrix per source block 0..30, memory-mapped), the FP32 final
+        norm gain and LM head, and the release's filter of tokens without letters or digits."""
+        if getattr(self, "_rjpp_state", None) is None:
+            self.ensure_loaded()
+            maps = {k: torch.load(os.path.join(RJPP, "lenses", f"{k}.pt"), map_location="cpu", weights_only=True, mmap=True)["parameters"]["jacobians"]
+                    for k in ("r", "jpp")}
+            head = self.model.lm_head.weight.detach().float()
+            excl = torch.zeros(head.shape[0], dtype=torch.bool, device=self.dev)
+            excl[torch.tensor(json.load(open(os.path.join(RJPP, "excluded_token_ids.json"))), device=self.dev)] = True
+            self._rjpp_state = {"maps": maps, "head": head, "gain": (1 + self.lm.norm.weight.detach().float()), "eps": self.lm.norm.eps,
+                                "excluded": excl, "cache": {}}
+        return self._rjpp_state
+
+    def rjpp_lens(self, layer, n, k=12, filtered=True):
+        """What neuron n's write direction (its raw down_proj column, both signs) reads as through the R and J++ lenses:
+        transported from block `layer`'s output to block 31's, then the final RMSNorm (1 + weight) and LM head, all FP32,
+        top-k tokens, filtered like the release reader by default. None for block 31 (the lenses' target) or when the
+        release isn't downloaded. Read from the precomputed indexes when they hold k tokens, else computed live."""
+        if layer >= 31:
+            return None
+        ri, ji = self.r_index(), self.jpp_index()
+        if filtered and ri is not None and ji is not None and k <= ri["up"].shape[-1]:
+            v = self.vocab_strings()
+            return {f"{kind}_{side}": [v[t] for t in idx[side][layer, n, :k]] for kind, idx in (("r", ri), ("jpp", ji))
+                    for side in ("up", "down")}
+        return self._rjpp_live(layer, n, k, filtered)
+
     @_locked
+    def _rjpp_live(self, layer, n, k, filtered):
+        if not self.rjpp_available():
+            return None
+        st = self._rjpp()
+        key = (layer, n, k, filtered)
+        if key in st["cache"]:
+            return st["cache"][key]
+        v = self.vocab_strings()
+        out = {}
+        with torch.inference_mode():
+            d = self.down_col(layer, n).to(self.dev)
+            for kind in ("r", "jpp"):
+                z = d @ st["maps"][kind][layer].to(self.dev).T
+                z = z * torch.rsqrt(z.square().mean() + st["eps"]) * st["gain"]
+                raw = z @ st["head"].T
+                logits, neg = raw, -raw  # the negative pole: -d transports and normalises to exactly -z
+                if filtered:
+                    logits, neg = logits.masked_fill(st["excluded"], float("-inf")), neg.masked_fill(st["excluded"], float("-inf"))
+                out[f"{kind}_up"] = [v[t] for t in logits.topk(k).indices.tolist()]
+                out[f"{kind}_down"] = [v[t] for t in neg.topk(k).indices.tolist()]
+        st["cache"][key] = out
+        return out
+
+    # ---------- connections ----------
     def connections(self, layer, n, k=24, lens_k=5):
         """Direct-path weights between neuron (layer, n) and neurons in other layers, ignoring everything between.
         Downstream B in layer j > layer: g = W_gate_j[B] . ((1 + w_j) * d_n), u = W_up_j[B] . (...), where d_n is this
@@ -911,6 +993,34 @@ class Runtime:
                 self._vocab = [self.tok.decode([i]) for i in range(len(self.tok))]
                 json.dump(self._vocab, open(path, "w"))
         return self._vocab
+
+    # ---------- one neuron over several texts ----------
+    @_locked
+    def neuron_traces(self, layer, n, seqs):
+        """Neuron n of `layer` at every token of each token-id list in seqs, one forward pass with the lists as rows
+        (right-padded; causal layers keep real tokens blind to the pads), stopped once the layer is reached."""
+        self.ensure_loaded()
+
+        class _Done(Exception):
+            pass
+        got = {}
+
+        def grab(mod, inp):
+            got["a"] = inp[0][:, :, n].float().cpu()
+            raise _Done
+        S = max(len(s) for s in seqs)
+        ids = torch.zeros((len(seqs), S), dtype=torch.long)
+        for r, s in enumerate(seqs):
+            ids[r, :len(s)] = torch.tensor(s)
+        h = self.lm.layers[layer].mlp.down_proj.register_forward_pre_hook(grab)
+        try:
+            with torch.inference_mode():
+                self.lm(input_ids=ids.to(self.dev), use_cache=False)
+        except _Done:
+            pass
+        finally:
+            h.remove()
+        return [got["a"][r, :len(s)].numpy() for r, s in enumerate(seqs)]
 
     # ---------- which neurons fire on a text ----------
     def all_activations(self, ids, skip_first=False):

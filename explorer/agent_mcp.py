@@ -635,26 +635,36 @@ def reply(id_, result=None, error=None):
     sys.stdout.flush()
 
 
-for line in sys.stdin:
-    if not line.strip():
-        continue
-    m = json.loads(line)
-    method, id_ = m.get("method"), m.get("id")
-    if id_ is None:
-        continue  # notifications
-    if method == "initialize":
-        reply(id_, {"protocolVersion": m["params"].get("protocolVersion", "2025-06-18"),
-                    "capabilities": {"tools": {}}, "serverInfo": {"name": "explorer", "version": "0.1"}})
-    elif method == "tools/list":
-        reply(id_, {"tools": TOOLS})
-    elif method == "tools/call":
-        p = m["params"]
-        try:
-            out = call(p["name"], p.get("arguments") or {})
-            reply(id_, {"content": [{"type": "text", "text": json.dumps(out, ensure_ascii=False)}]})
-        except Exception as e:  # tool errors go back to the model, not the protocol
-            reply(id_, {"content": [{"type": "text", "text": f"error: {e}"}], "isError": True})
-    elif method == "ping":
-        reply(id_, {})
-    else:
-        reply(id_, error={"code": -32601, "message": f"method not found: {method}"})
+def serve(tools=None, handler=None, name="explorer", instructions=None):
+    """the stdio JSON-RPC loop; explorer/mcp.py reuses it with a smaller tool list and an in-process backend"""
+    tools, handler = tools or TOOLS, handler or call
+    for line in sys.stdin:
+        if not line.strip():
+            continue
+        m = json.loads(line)
+        method, id_ = m.get("method"), m.get("id")
+        if id_ is None:
+            continue  # notifications
+        if method == "initialize":
+            info = {"protocolVersion": m["params"].get("protocolVersion", "2025-06-18"),
+                    "capabilities": {"tools": {}}, "serverInfo": {"name": name, "version": "0.1"}}
+            if instructions:
+                info["instructions"] = instructions
+            reply(id_, info)
+        elif method == "tools/list":
+            reply(id_, {"tools": tools})
+        elif method == "tools/call":
+            p = m["params"]
+            try:
+                out = handler(p["name"], p.get("arguments") or {})
+                reply(id_, {"content": [{"type": "text", "text": json.dumps(out, ensure_ascii=False)}]})
+            except Exception as e:  # tool errors go back to the model, not the protocol
+                reply(id_, {"content": [{"type": "text", "text": f"error: {e}"}], "isError": True})
+        elif method == "ping":
+            reply(id_, {})
+        else:
+            reply(id_, error={"code": -32601, "message": f"method not found: {method}"})
+
+
+if __name__ == "__main__":
+    serve()

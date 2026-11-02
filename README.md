@@ -38,6 +38,31 @@ The R and J++ lens rows read the maps of [bubskee/qwen3.5-4b-r-jpp-lenses](https
   `explorer/agent_prompt.local.md` when present (untracked, for your own additions);
   `EXPLORER_CLAUDE_MODEL` picks the model. The server answers only pages and tools on this machine.
 
+## MCP server (no UI)
+
+Everything the explorer's Claude can do, for any MCP client (Claude Code, Claude Desktop, Cursor, your own agent),
+without the browser: `explorer/mcp.py` runs the explorer's backend in-process and serves its tools over stdio.
+
+    git clone https://github.com/lyramakesmusic/neuron-explorer && cd neuron-explorer && uv sync
+    claude mcp add neuron-explorer -- uv run --directory "$PWD" python explorer/mcp.py
+
+Claude Desktop (`claude_desktop_config.json`):
+
+    {"mcpServers": {"neuron-explorer": {"command": "uv", "args": ["run", "--directory", "/path/to/neuron-explorer", "python", "explorer/mcp.py"]}}}
+
+| tools | what |
+|---|---|
+| `neuron`, `search_lens`, `top_units`, `names`, `set_name` | a neuron's lenses for both poles (steer, R, J++, S, logit), links each way; search lenses for a token |
+| `cone`, `web_summary` | the neuron's direct-path web: who feeds it, who it feeds, pooled into tokens |
+| `head`, `neuron_heads`, `attention`, `attn_drive` | attention heads: what they read and write, which heads a neuron talks to, live patterns |
+| `steer`, `compare`, `logprobs`, `activations`, `top_firing` | the live model: steered rollouts (up / base / down), ablations, next-token logprobs, activations over your text |
+| `exemplars`, `rollouts` | where a neuron fires on FineFineWeb; the sweep's steered rollouts (when that data is present) |
+| `neuronary_*` | search, download and publish recipes, readouts and interpretations on [neuronary.org](https://neuronary.org) |
+
+`EXPLORER_NO_MODEL=1` serves the cached data only (lenses, cones, webs, search) without downloading or loading the
+model; the live tools say so. Otherwise Qwen3.5-4B loads on first use (MPS, CUDA or CPU). `scripts/mcp_smoke.py`
+drives the server over stdio as a check. The map tools (camera, highlights, panels) are left out: there's no map.
+
 ## Sweep
 
 Runs on a CUDA 13 GPU pod with the steering fork of vLLM ([RhizoNymph/vllm](https://github.com/RhizoNymph/vllm)).

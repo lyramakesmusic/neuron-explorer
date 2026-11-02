@@ -1,5 +1,7 @@
 # neuron explorer
 
+[English](README.md) · [Русский](README.ru.md)
+
 Steering-first neuron explorer for Qwen3.5-4B. Every MLP neuron in a layer is pushed up and down on a few prompts, every
 rollout is kept, and the explorer lays the results out over a 3D view of the model.
 
@@ -29,7 +31,7 @@ The R and J++ lens rows read the maps of [bubskee/qwen3.5-4b-r-jpp-lenses](https
   by the neuron's activation, and the domains it concentrates in.
 - **embeddings**: UMAP of a layer's rollouts, coloured by neuron, prompt, dose or kind.
 - **language**: the interface follows the browser language on first visit; the menu at the right of the header
-  switches between English and Simplified Chinese (the choice is kept in this browser). Translations live in
+  switches between English, Simplified Chinese and Russian (the choice is kept in this browser). Translations live in
   `explorer/static/i18n.js`.
 - **Claude** (fourth neuron-panel tab, or the right-edge handle): a chat running the `claude` CLI (installed and
   logged in) with the explorer as an MCP server (`explorer/agent_mcp.py`). It reads neurons, cones and lenses, runs the

@@ -437,13 +437,237 @@ const zh = {
   "error.technical": "技术错误：{raw}",
 };
 
-const DICT = { en, "zh-CN": zh };
+const ru = {
+  "nav.map": "карта",
+  "nav.embeddings": "эмбеддинги",
+
+  "header.layer": "слой",
+  "header.layoutTitle": "раскладка листа",
+  "header.layoutIndex": "индекс",
+  "header.layoutWrites": "записи",
+  "header.webTitle": "сеть связей открытого нейрона: конусы входящих и исходящих связей; жёлтые связи тянут читателя вверх, пурпурные — вниз",
+  "header.webOff": "без сети",
+  "header.webOn": "сеть",
+  "header.webZ": "сильнейшие связи сети",
+  "header.webZTitle": "сеть: сильнейшие связи открытого нейрона в обе стороны",
+  "header.jump": "перейти к нейрону",
+  "header.lens": "линза",
+  "header.fires": "активации",
+  "header.searchLens": "поиск по линзе",
+  "header.searchText": "текст: golden gate bridge",
+  "header.search": "поиск",
+  "header.language": "Язык",
+
+  "view.colorNeuron": "нейрон",
+  "view.colorPrompt": "промпт",
+  "view.colorDose": "доза",
+  "view.colorKind": "тип",
+
+  "focus.close": "закрыть нейрон",
+  "focus.name": "имя",
+  "focus.featureName": "имя признака",
+  "focus.idRandom": "L{layer} случайный {n}",
+  "focus.rank": "#{rank}/{n}  масса {mass}  контроль {nullPct}%",
+
+  "list.net": "сеть",
+  "list.run": "запуск",
+  "list.hide": "скрыть список",
+  "list.show": "показать список",
+  "list.filter": "фильтр",
+  "list.filterAria": "фильтровать по слову или имени",
+  "list.random": "случайные",
+  "list.infText": "вставьте текст: какие нейроны сильнее всего срабатывают на каждом токене",
+  "list.fromLayer": "от слоя",
+  "list.toLayer": "до слоя",
+  "list.minScore": "минимальный балл",
+  "list.lensHas": "линза содержит…",
+  "list.lensFilter": "фильтр линзы",
+
+  "tabs.examples": "Примеры",
+  "tabs.chat": "Чат",
+  "tabs.details": "Детали",
+  "tabs.agent": "агент для новых диалогов",
+  "tabs.past": "прошлые",
+  "tabs.pastTitle": "прошлые диалоги",
+  "tabs.new": "новый",
+  "tabs.newTitle": "начать новый диалог",
+  "tabs.collapse": "свернуть",
+  "tabs.showPanel": "показать панель",
+  "tabs.openAgent": "открыть диалог",
+  "tabs.agentHandle": "‹ {agent}",
+
+  "chat.add": "сложить",
+  "chat.writes": "пишет",
+  "chat.reads": "читает вас",
+  "chat.smaller": "меньше",
+  "chat.larger": "больше",
+  "chat.dose": "доза",
+  "chat.clear": "очистить",
+  "chat.who": "Кто вы?",
+  "chat.textToRead": "текст для чтения",
+  "chat.run": "запустить",
+  "chat.stop": "стоп",
+
+  "agent.empty": "Спросите что угодно о модели или откройте нейрон и нажмите <b>объяснить</b>.",
+  "agent.attach": "прикрепить",
+  "agent.attachTitle": "прикрепить файлы (или перетащите / вставьте)",
+  "agent.ask": "Спросить Claude…",
+  "agent.inputTitle": "пока Claude работает: Enter прерывает и отправляет, ⌘/Ctrl+Enter ставит в очередь",
+  "agent.send": "отправить",
+  "agent.stop": "стоп",
+  "agent.explain": "объяснить {ref}",
+  "agent.web": "что делает его сеть связей?",
+  "agent.webShown": "что делает сеть связей {ref}?",
+  "agent.neurons_one": "{n} нейрон",
+  "agent.neurons_few": "{n} нейрона",
+  "agent.neurons_many": "{n} нейронов",
+  "agent.running": "выполняется…",
+  "agent.stopped": "остановлено",
+  "agent.edit": "изменить",
+  "agent.editTitle": "удалить это сообщение и ответ и вернуть его в поле ввода",
+  "agent.reroll": "↻ заново",
+  "agent.rerollTitle": "отбросить этот ответ и спросить заново",
+  "agent.useName": "использовать имя: {name}",
+  "agent.attached": "(вложенные файлы)",
+  "agent.pasted": "вставлено",
+  "agent.remove": "удалить",
+  "agent.minutesAgo": "{n} мин назад",
+  "agent.hoursAgo": "{n} ч назад",
+  "agent.messages_one": "{n} сообщение",
+  "agent.messages_few": "{n} сообщения",
+  "agent.messages_many": "{n} сообщений",
+
+  "tool.overview": "обзор",
+  "tool.neuron": "нейрон",
+  "tool.rollouts": "генерации",
+  "tool.cone": "конус",
+  "tool.web_summary": "сводка сети",
+  "tool.search_lens": "поиск по линзе",
+  "tool.top_units": "топ юнитов",
+  "tool.set_name": "задать имя",
+  "tool.names": "именованные нейроны",
+  "tool.steer": "управление генерацией",
+  "tool.activations": "активации",
+  "tool.compare": "сравнение",
+  "tool.logprobs": "логвероятности",
+  "tool.top_firing": "сильнейшие активации",
+  "tool.camera": "камера",
+  "tool.annotate_neurons": "аннотировать нейроны",
+  "tool.show_text": "показать текст",
+  "tool.show_search": "показать поиск",
+  "tool.open_tab": "открыть вкладку",
+  "tool.select_neuron": "выбрать нейрон",
+  "tool.head": "голова внимания",
+  "tool.neuron_heads": "головы внимания нейрона",
+  "tool.attention": "внимание",
+  "tool.attn_drive": "вклад внимания",
+  "tool.select_head": "выбрать голову",
+  "tool.neuronary_search": "поиск в neuronary",
+  "tool.neuronary_get": "получить рецепт neuronary",
+  "tool.neuronary_publish": "опубликовать рецепт neuronary",
+  "tool.neuronary_update": "обновить рецепт neuronary",
+  "tool.neuronary_comment": "прокомментировать рецепт neuronary",
+  "tool.neuronary_reproduce": "сообщить о воспроизведении neuronary",
+  "tool.neuronary_vote": "голосовать за рецепт neuronary",
+  "tool.exemplars": "примеры активаций",
+  "tool.neuronary_neuron": "нейрон neuronary",
+  "tool.neuronary_readouts": "отправить показания neuronary",
+  "tool.neuronary_interpret": "опубликовать интерпретацию neuronary",
+  "tool.highlight_neurons": "выделить нейроны",
+  "tool.Read": "чтение файла",
+  "tool.Glob": "поиск файлов",
+  "tool.Grep": "поиск по файлам",
+  "tool.Write": "запись файла",
+  "tool.Edit": "правка файла",
+  "tool.Bash": "командная строка",
+
+  "map.allLayers": "‹ все слои  ·  L{l}",
+  "map.fullAttention": "полное внимание · {q} q / {kv} kv голов",
+  "map.linearAttention": "линейное внимание · {k} k / {v} v голов",
+  "map.mass": "масса {z}",
+
+  "web.title": "сеть: сильнейшие связи открытого нейрона в обе стороны (дальше — по {k} на шаг) · связей: {n}",
+  "web.head": "сеть L{layer} N{n} · связей: {links} · {src}, по превышению над уровнем слоя",
+  "web.srcSteer": "линза управления",
+  "web.srcLogit": "логит-линза",
+  "web.fedBy": "питается от · входящих {n}",
+  "web.heldBy": "сдерживается",
+  "web.toward": "питает → толкает к · исходящих {n}",
+  "web.away": "питает → толкает от",
+  "web.nothing": "ничего выше случайного уровня",
+  "web.chipTitle": "нейронов: {n} · балл {w}",
+
+  "lens.heads": "головы",
+  "lens.steer": "линза управления · KL {up} / {down}",
+  "lens.logit": "логит-линза",
+  "lens.jpp": "J++-линза",
+  "lens.r": "R-линза",
+  "lens.s": "S-линза · читает",
+  "lens.steerShort": "линза управления",
+  "lens.push": "+ толчок · KL {kl}",
+  "lens.pull": "− толчок · KL {kl}",
+
+  "details.words": "слова",
+  "details.dose": "доза",
+  "details.push": "толчок",
+  "details.distinct": "distinct-4",
+  "details.capped": "ограничено",
+  "details.logprob": "logprob",
+  "details.connections": "связи",
+  "details.writesInto": "записывает в",
+  "details.drivenBy": "управляется",
+  "details.headsReading": "головы, читающие его",
+  "details.headsFeeding": "головы, подающие в него",
+  "details.rollouts": "прогонов: {n} · z {z} · {prompts}",
+
+  "results.indexing": "индексация линзы",
+  "results.running": "выполняется…",
+  "results.measuring": "измерение диапазонов нейронов",
+  "results.pass_one": "1 нейрон проходит · балл = активация ÷ его типичный экстремум",
+  "results.pass_few": "{total} нейрона проходят · балл = активация ÷ его типичный экстремум",
+  "results.pass_many": "{total} нейронов проходят · балл = активация ÷ его типичный экстремум",
+  "results.summary_one": "1 нейрон · {tokens} ток.",
+  "results.summary_few": "{total} нейрона · {tokens} ток.",
+  "results.summary_many": "{total} нейронов · {tokens} ток.",
+
+  "scatter.baseline": "базовая",
+  "scatter.random": "случайная",
+
+  "status.unreachable": "сервер недоступен",
+  "status.idle": "простой",
+  "status.loading": "загрузка",
+  "status.indexing": "индексация линзы {i}/{n}",
+  "status.measuring": "измерение диапазонов нейронов {seen}k/{tokens}k токенов",
+  "status.noModel": "нет модели",
+  "status.other": "статус: {raw}",
+
+  "error.http": "{path} · HTTP {status}: {detail}",
+  "error.label": "{label}: {error}",
+  "error.unknown": "неизвестная ошибка",
+  "error.unreachable": "сервер недоступен",
+  "error.forbidden": "сервер отклонил запрос",
+  "error.fileTooLarge": "файл слишком большой (больше 25 МБ)",
+  "error.noModel": "живая модель выключена",
+  "error.modelLoading": "модель загружается",
+  "error.noSuchChat": "диалог не найден",
+  "error.noSuchHead": "голова внимания не найдена",
+  "error.agentExited": "агент завершился ({code})",
+  "error.agentExitedNoCode": "агент завершился",
+  "error.missingCli": "не найдена командная утилита агента: {name}",
+  "error.safety": "ответ остановлен классификатором безопасности",
+  "error.technical": "техническая ошибка: {raw}",
+};
+
+const DICT = { en, "zh-CN": zh, ru };
 const STORE_KEY = "ne.lang";
 
 let current = "en";
 let selectEl = null;
 
-const normalize = lang => (lang === "zh-CN" ? "zh-CN" : "en");
+// Russian needs one / few / many; the other dictionaries use one / other.
+const ruPlural = typeof Intl !== "undefined" && Intl.PluralRules ? new Intl.PluralRules("ru") : null;
+
+const normalize = lang => (lang === "zh-CN" ? "zh-CN" : /^ru(-|$)/i.test(lang) ? "ru" : "en");
 
 function storedLang() {
   try { return localStorage.getItem(STORE_KEY); } catch { return null; }
@@ -452,7 +676,8 @@ function storedLang() {
 function detectLang() {
   // only claim Simplified Chinese: a Traditional Chinese browser gets the English UI
   const primary = navigator.languages?.[0] || navigator.language || "";
-  return /^zh(-(cn|sg|hans)(-|$)|$)/i.test(primary) ? "zh-CN" : "en";
+  if (/^zh(-(cn|sg|hans)(-|$)|$)/i.test(primary)) return "zh-CN";
+  return /^ru(-|$)/i.test(primary) ? "ru" : "en";
 }
 
 export function getLang() { return current; }
@@ -463,13 +688,20 @@ export function t(key, vars) {
   return text.replace(/\{(\w+)\}/g, (m, k) => (vars[k] ?? m));
 }
 
-// English needs a plural for a few counted labels; Chinese uses the same form for both.
+// English needs a plural for a few counted labels; Chinese uses the same form for both, Russian three forms.
 export function tp(key, n, vars = {}) {
+  if (current === "ru" && ruPlural) {
+    // fractions select "other", which Russian lacks here, so they read as "many"
+    const form = ruPlural.select(n);
+    const suffix = ["one", "few", "many"].includes(form) ? form : "many";
+    const name = [`${key}_${suffix}`, `${key}_many`, `${key}_one`, `${key}_other`].find(k => DICT.ru[k] != null) || `${key}_one`;
+    return t(name, { ...vars, n });
+  }
   return t(`${key}_${n === 1 ? "one" : "other"}`, { ...vars, n });
 }
 
 // Backend and network errors are stable English strings (or raw technical output). Map the common ones here so the
-// API stays language-neutral; anything unmatched stays raw in English and gets a Chinese prefix in Chinese mode.
+// API stays language-neutral; anything unmatched stays raw in English and gets a prefix in the other languages.
 function knownError(raw) {
   const text = raw.trim();
   if (!text) return t("error.unknown");
@@ -498,10 +730,10 @@ export function localizeError(input) {
     const [, path, status, body] = http;
     let detail = body;
     try { const j = JSON.parse(body); if (j && typeof j.error === "string") detail = j.error; } catch {}
-    detail = knownError(detail) || (getLang() === "zh-CN" ? t("error.technical", { raw: detail }) : detail);
+    detail = knownError(detail) || (getLang() !== "en" ? t("error.technical", { raw: detail }) : detail);
     return t("error.http", { path, status, detail });
   }
-  return getLang() === "zh-CN" ? t("error.technical", { raw }) : raw;
+  return getLang() !== "en" ? t("error.technical", { raw }) : raw;
 }
 
 // Translate the static markup: data-i18n (text), data-i18n-html (markup), and the placeholder/title/aria variants.

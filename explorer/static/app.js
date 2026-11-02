@@ -1,6 +1,6 @@
 import { createMap } from "./map3d.js?v=78";
 import { createScatter } from "./scatter.js?v=39";
-import { t, tp, initI18n, applyTranslations, getLang, localizeError } from "./i18n.js?v=4";
+import { t, tp, initI18n, applyTranslations, getLang, localizeError } from "./i18n.js?v=5";
 
 const $ = s => document.querySelector(s);
 const api = async (p, body) => {
@@ -1005,7 +1005,7 @@ function localizeStatus(s) {
   if (m) return t("status.indexing", { i: m[1], n: m[2] });
   m = s.match(/^measuring neuron ranges (\d+)k\/(\d+)k tokens$/);
   if (m) return t("status.measuring", { seen: m[1], tokens: m[2] });
-  return getLang() === "zh-CN" ? t("status.other", { raw: s }) : s;
+  return getLang() !== "en" ? t("status.other", { raw: s }) : s;
 }
 window.__ne = { map, state, scatter };
 // ---------- start ----------

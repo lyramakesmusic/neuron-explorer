@@ -260,6 +260,7 @@ body.list-hidden #layer-back { left: 56px; }
 .a-err { color: #d77; font: 12px var(--mono); white-space: pre-wrap; }
 .a-busy::after { content: "thinking…"; color: var(--dim); font-size: 13px; }
 html[lang="zh-CN"] .a-busy::after { content: "思考中…"; }
+html[lang="ru"] .a-busy::after { content: "думает…"; }
 #a-usename { margin-top: 6px; font-size: 12px; color: var(--dim); background: var(--raise); padding: 3px 8px; border-radius: 3px; }
 #a-form { display: flex; gap: 8px; align-items: flex-end; padding: 8px 12px 12px; }
 #a-input { flex: 1; resize: none; max-height: 200px; background: var(--raise); border: 0; border-radius: 8px; padding: 9px 12px; color: var(--ink); font: 15px/1.4 var(--font); outline: none; }

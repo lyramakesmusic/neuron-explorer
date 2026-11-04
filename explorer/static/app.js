@@ -1,6 +1,6 @@
 import { createMap } from "./map3d.js?v=78";
 import { createScatter } from "./scatter.js?v=39";
-import { t, tp, initI18n, applyTranslations, getLang, localizeError } from "./i18n.js?v=4";
+import { t, tp, initI18n, applyTranslations, getLang, localizeError } from "./i18n.js?v=5";
 
 const $ = s => document.querySelector(s);
 const api = async (p, body) => {
@@ -17,7 +17,7 @@ addEventListener("unhandledrejection", e => {
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const fmtDose = d => (d > 0 ? "+" : d < 0 ? "−" : "") + Math.abs(d);
 // brand names stay in their own script; never lowercase or translate them as identifiers
-const agentName = kind => (kind === "codex" ? "Codex" : "Claude");
+const agentName = kind => (kind === "codex" ? "Codex" : kind === "dsh" ? "DSH" : "Claude");
 // backend/network errors keep their raw text in data-raw, so a language switch can relabel them in place
 function errorNode(raw, label) {
   const d = document.createElement("div");
@@ -1041,12 +1041,20 @@ function saveAgent() {
   try { localStorage.setItem(AGENT_KEY, JSON.stringify({ chat: agent.chat, kind: agent.kind, html: $("#a-thread").innerHTML })); } catch {}
 }
 // which agent the chat runs on: the tab is named after it, and the dropdown picks it for the next new chat
+const AGENT_LABELS = { claude: "Claude", codex: "Codex", dsh: "DSH" };
 function setAgentKind(kind) {
-  agent.kind = kind === "codex" ? "codex" : "claude";
+  agent.kind = Object.hasOwn(AGENT_LABELS, kind) ? kind : "claude";
   selectedAgent = agent.kind;
   $("#a-agent").value = agent.kind;
   $('#tabs button[data-tab="claude"]').textContent = agentName(agent.kind);
+  $("#a-input").placeholder = t(`agent.ask.${agent.kind}`);
+  $("#a-input").title = t(`agent.inputTitle.${agent.kind}`);
 }
+function agentErrorMessage(r) {
+  if (r && r.code) { const s = t(`agent.err.${r.code}`); if (s !== `agent.err.${r.code}`) return s; }
+  return String((r && r.error) || r || "");
+}
+document.addEventListener("i18nchange", () => { if (agent && agent.kind) setAgentKind(agent.kind); });
 $("#a-agent").addEventListener("change", e => {
   const kind = e.target.value;
   try { localStorage.setItem("explorer.agentKind", kind); } catch {}
@@ -1236,7 +1244,7 @@ async function agentTurn(message, shown, shownCls = "user", atts = []) {
   try {
     const r = await api("/api/agent/send", { chat: agent.chat, agent: agent.kind, message, attachments: atts.map(a => a.id),
       ...(f && f.kind === "neuron" ? { layer: f.layer, n: f.n } : f && f.kind === "head" ? { layer: f.layer, head: f.n } : {}) });
-    if (r.error) throw new Error(r.error);
+    if (r.error) throw new Error(agentErrorMessage(r));
   } catch (err) {
     const d = agentError(err.message || err); putInBox(d); finishTurn();
   } finally { agent.sending--; }
@@ -1273,7 +1281,8 @@ async function renderPastList() {
   try { list = await api("/api/agent/chats"); }
   catch (err) { if (pastStash === null) return; th.textContent = ""; th.append(agentError(err.message || err)); return; }
   if (pastStash === null) return;
-  th.innerHTML = list.length ? list.map(c => `<button class="a-pastrow${c.chat === agent.chat ? " on" : ""}" data-chat="${c.chat}" data-agent="${c.agent || "claude"}"><span class="t">${esc(c.title || "—")}</span><span class="m">${c.agent === "codex" ? `${agentName("codex")} · ` : ""}${ago(c.t)} · ${tp("agent.messages", c.turns)}</span></button>`).join("")
+  const tag = a => a && a !== "claude" ? `${agentName(a)} · ` : "";
+  th.innerHTML = list.length ? list.map(c => `<button class="a-pastrow${c.chat === agent.chat ? " on" : ""}" data-chat="${c.chat}" data-agent="${c.agent || "claude"}"><span class="t">${esc(c.title || "—")}</span><span class="m">${tag(c.agent || "claude")}${ago(c.t)} · ${tp("agent.messages", c.turns)}</span></button>`).join("")
     : `<div class="dim">—</div>`;
 }
 async function togglePast() {

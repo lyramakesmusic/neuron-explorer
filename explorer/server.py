@@ -1892,6 +1892,7 @@ def _dsh_patch_text(prompt):
           NEURONARY_TOKEN: !!js process.env.NEURONARY_TOKEN || ''
           NEURONARY_API: !!js process.env.NEURONARY_API || {_yaml_str(DSH_DEFAULT_API)}
         toolCallTimeoutMs: 120000
+        failOnStartupError: true
 """
 
 
@@ -1964,8 +1965,8 @@ def _dsh_session(cid):
 
 
 def _dsh_env(cid, key):
-    # The profile follows DSH's own default approval/sandbox policy.  Set EXPLORER_DSH_PERMISSION_MODE to add
-    # `--permission-mode <preset>` (for example workspace-write) when the person wants a tighter sandbox.
+    # The run selects its sandbox and approval flags in `_dsh_start`; this environment only carries the profile,
+    # the explorer address and the API key. EXPLORER_DSH_PERMISSION_MODE tightens the sandbox there.
     env = {**os.environ, "DSH_HOME": _dsh_home(), "EXPLORER_URL": f"http://127.0.0.1:{PORT}",
            "EXPLORER_CHAT": cid, "NO_COLOR": "1", "DEEPSEEK_API_KEY": key}
     env.update(NEURONARY_ENV)
@@ -2014,8 +2015,17 @@ async def _dsh_start(c, item):
         _emit(c, {"t": "done"})
         return
     cmd = [_dsh_bin(), "--profile", DSH_PROFILE, "--json"]
-    if os.environ.get("EXPLORER_DSH_PERMISSION_MODE"):
-        cmd += ["--permission-mode", os.environ["EXPLORER_DSH_PERMISSION_MODE"]]
+    mode = os.environ.get("EXPLORER_DSH_PERMISSION_MODE") or "workspace-write"
+    cmd += ["--permission-mode", mode]
+    # A headless run has no channel to approve a pending tool call, and the
+    # workspace-write preset roots writes at the agent cache dir. Match Claude
+    # and Codex: never prompt, and allow the repo and the home folder.
+    if mode == "workspace-write":
+        cmd += [
+            "--approval-policy", "never",
+            "--add-dir", ROOT,
+            "--add-dir", os.path.expanduser("~"),
+        ]
     sid = _dsh_session(c["session"])
     if sid:
         cmd += ["--session-id", sid]

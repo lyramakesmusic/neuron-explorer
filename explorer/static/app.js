@@ -17,7 +17,7 @@ addEventListener("unhandledrejection", e => {
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const fmtDose = d => (d > 0 ? "+" : d < 0 ? "−" : "") + Math.abs(d);
 // brand names stay in their own script; never lowercase or translate them as identifiers
-const agentName = kind => (kind === "codex" ? "Codex" : "Claude");
+const agentName = kind => (kind === "codex" ? "Codex" : kind === "dsh" ? "DSH" : "Claude");
 // backend/network errors keep their raw text in data-raw, so a language switch can relabel them in place
 function errorNode(raw, label) {
   const d = document.createElement("div");

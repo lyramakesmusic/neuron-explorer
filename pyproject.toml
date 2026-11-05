@@ -13,4 +13,17 @@ dependencies = [
     "uvicorn>=0.54.0",
     "sentence-transformers>=6.1.0",
     "umap-learn>=0.5.12",
+    "truststore>=0.10",
+    # fast kernels for Qwen3.5's linear-attention layers (about 3.5x faster decode than transformers' torch fallback)
+    "flash-linear-attention>=0.6.0; sys_platform != 'darwin'",
+    "triton-windows>=3.7,<3.8; sys_platform == 'win32'",
 ]
+
+# CUDA build of torch on Windows and Linux (PyPI's Windows wheels are CPU-only); macOS keeps PyPI (MPS)
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu130", marker = "sys_platform != 'darwin'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true

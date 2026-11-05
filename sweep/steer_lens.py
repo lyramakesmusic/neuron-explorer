@@ -12,11 +12,15 @@ up_kl[N], down_kl[N].
 """
 import argparse
 import os
+import sys
 import time
 
 import numpy as np
 import torch
 from transformers import AutoTokenizer, Qwen3_5ForConditionalGeneration
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "explorer"))
+from paths import MODEL, NAME  # noqa: E402
 
 CHAT = ["Who are you?", "Write whatever you like."]
 PLAIN = ["I think the most important thing to remember is", "Today we are going to talk about"]
@@ -24,19 +28,25 @@ PLAIN = ["I think the most important thing to remember is", "Today we are going 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default="Qwen/Qwen3.5-4B")
-    ap.add_argument("--layers", default="0-31")
+    ap.add_argument("--model", default=MODEL)
+    ap.add_argument("--layers", default=None, help="e.g. 0-7; default all layers")
     ap.add_argument("--dose", type=float, default=0.8)
     ap.add_argument("--neurons-per-batch", type=int, default=96)
     ap.add_argument("--k", type=int, default=12)
-    ap.add_argument("--out", default="stats/steer_lens")
+    ap.add_argument("--out", default=None, help="default stats/steer_lens_<model>")
     a = ap.parse_args()
-    lo, _, hi = a.layers.partition("-")
-    layers = list(range(int(lo), int(hi or lo) + 1))
+    a.out = a.out or f"stats/steer_lens_{NAME}"
 
     tok = AutoTokenizer.from_pretrained(a.model)
-    model = Qwen3_5ForConditionalGeneration.from_pretrained(a.model, dtype=torch.bfloat16, device_map="cuda").eval()
+    # vision tower stays in RAM (it is never used), so the language model alone takes VRAM
+    model = Qwen3_5ForConditionalGeneration.from_pretrained(
+        a.model, dtype=torch.bfloat16, device_map={"model.visual": "cpu", "model.language_model": "cuda", "lm_head": "cuda"}).eval()
+    model.model.visual = None
+    torch.cuda.empty_cache()
     lm = model.model.language_model
+    lo, _, hi = (a.layers or f"0-{len(lm.layers) - 1}").partition("-")
+    layers = list(range(int(lo), int(hi or lo) + 1))
+
     ctxs = [tok.apply_chat_template([{"role": "user", "content": c}], add_generation_prompt=True, enable_thinking=False,
                                     tokenize=True) for c in CHAT] + [tok(p).input_ids for p in PLAIN]
     ctxs = [list(c["input_ids"] if hasattr(c, "keys") else c) for c in ctxs]

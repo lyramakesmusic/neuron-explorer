@@ -16,7 +16,8 @@ import torch.nn.functional as F
 from transformers import AutoTokenizer, Qwen3_5ForConditionalGeneration
 from transformers.models.qwen3_5.modeling_qwen3_5 import apply_rotary_pos_emb, l2norm
 
-MODEL = os.environ.get("EXPLORER_MODEL", "Qwen/Qwen3.5-4B")
+from paths import CACHE, MODEL, STATS_PREFIX  # noqa: E402  (EXPLORER_MODEL; per-model cache folder)
+
 NO_MODEL = bool(os.environ.get("EXPLORER_NO_MODEL"))  # cache-only: never download or load weights
 REFERENCE_TEXT = (
     "The history of the region is long and varied. Farmers settled the river valley first, then traders arrived, "
@@ -26,7 +27,6 @@ REFERENCE_TEXT = (
 )
 
 
-CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache")
 RJPP = os.path.join(CACHE, "rjpp")  # bubskee/qwen3.5-4b-r-jpp-lenses, downloaded here
 
 
@@ -80,8 +80,12 @@ class Runtime:
             # straight onto the device: loading on cpu and then moving needs two copies of the weights at once
             if dev == "mps":  # one tensor at a time: transformers' threaded loading can deadlock copying to mps
                 os.environ.setdefault("HF_DEACTIVATE_ASYNC_LOAD", "1")
-            m = Qwen3_5ForConditionalGeneration.from_pretrained(MODEL, dtype=torch.bfloat16, device_map=dev).eval()
-            m.model.visual = None  # the vision tower is never used; frees its weights
+            # the vision tower is never used: keep it in RAM, not on the GPU (it would take VRAM a 6 GB card needs)
+            dmap = dev if dev == "mps" else {"model.visual": "cpu", "model.language_model": dev, "lm_head": dev}
+            m = Qwen3_5ForConditionalGeneration.from_pretrained(MODEL, dtype=torch.bfloat16, device_map=dmap).eval()
+            m.model.visual = None  # frees its weights
+            if dev == "cuda":
+                torch.cuda.empty_cache()
             if dev == "mps":
                 torch.mps.empty_cache()
             self.dev, self.model, self.lm = dev, m, m.model.language_model
@@ -557,7 +561,7 @@ class Runtime:
     def layer_resid_p50(self, layer):
         if layer in self.resid_p50:
             return self.resid_p50[layer]
-        path = os.path.join(self.stats_dir, f"q35-4b_L{layer}.npz")
+        path = os.path.join(self.stats_dir, f"{STATS_PREFIX}_L{layer}.npz")
         if os.path.exists(path):
             v = float(np.load(path)["resid_norm_q10_50_90"][1])
         else:

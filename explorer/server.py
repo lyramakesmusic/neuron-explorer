@@ -7,6 +7,8 @@ import builtins
 import glob
 import json
 import os
+import re
+import shutil
 import sys
 import threading
 
@@ -26,7 +28,9 @@ from runtime import CACHE, MODEL, NO_MODEL, Runtime  # noqa: E402
 RUNS, STATS = os.path.join(ROOT, "runs"), os.path.join(ROOT, "stats")
 # the agent's neuronary.org tools (agent_mcp.py) read the person's token from here when set
 NEURONARY_ENV = {k: os.environ[k] for k in ("NEURONARY_TOKEN", "NEURONARY_API") if os.environ.get(k)}
-NAMES = os.path.join(ROOT, "explorer", "names.json")
+from paths import IS_4B, MODEL_ID, NAME as MODEL_NAME  # noqa: E402
+# neuron names are per model: names.json for the 4B, names.<model>.json for the others
+NAMES = os.path.join(ROOT, "explorer", "names.json" if IS_4B else f"names.{MODEL_NAME}.json")
 PORT = int(os.environ.get("PORT", 8791))
 _cfg = AutoConfig.from_pretrained(MODEL).get_text_config()
 ARCH = {"n_layers": _cfg.num_hidden_layers, "hidden": _cfg.hidden_size, "inter": _cfg.intermediate_size,
@@ -149,7 +153,7 @@ def names():
 @app.get("/api/index")
 def index():
     runs = layer_runs()
-    return {"model": MODEL, "arch": ARCH,
+    return {"model": MODEL_ID, "arch": ARCH,
             "layers": {str(l): os.path.basename(p) for l, p in sorted(runs.items())}, "status": rt.status}
 
 
@@ -294,7 +298,7 @@ async def steer(req: Request):
     return StreamingResponse(events(), media_type="text/event-stream")
 
 
-LENS_INDEX = os.path.join(ROOT, "explorer", "cache", "lens_index.npz")
+LENS_INDEX = os.path.join(CACHE, "lens_index.npz")
 _lens = {}
 
 
@@ -355,7 +359,7 @@ async def search(q: str, limit: int = 300):
     return {"ready": True, "results": res, "tokens": int(len(match)), "total": len(out)}
 
 
-ACT_SCALE = os.path.join(ROOT, "explorer", "cache", "act_scale.npz")
+ACT_SCALE = os.path.join(CACHE, "act_scale.npz")
 MAX_INFER_TOKENS = 1024  # [32, T, 9216] float32 activations plus scores: about 2.4 GB at this length
 
 
@@ -719,7 +723,7 @@ def infer_paths(pos: int, top: int = 300, min: float = 1.0):
 def layout(kind: str = "writes"):
     """Seriated grid layout: cell index (row * side + col) for every neuron, base64 int16, layer-major."""
     import base64
-    path = os.path.join(ROOT, "explorer", "cache", f"layout_{kind}.npz")
+    path = os.path.join(CACHE, f"layout_{kind}.npz")
     if not os.path.exists(path):
         return {"available": False}
     cell = np.load(path)["cell"].astype(np.int16)
@@ -851,7 +855,7 @@ def act_range(layer, n):
             "over_tokens": _act["tokens"], "source": "FineWeb-Edu"}
 
 
-FFW = os.path.join(ROOT, "explorer", "cache", "ffw")  # sweep/finefineweb.py output: corpus.npz, urls.json, acts.npz
+FFW = os.path.join(CACHE, "ffw")  # sweep/finefineweb.py output: corpus.npz, urls.json, acts.npz
 _ffw = {}
 
 
@@ -917,7 +921,7 @@ async def exemplars(request: Request, layer: int, n: int, k: int = 8, before: in
 @app.get("/api/agent/overview")
 def agent_overview():
     runs = layer_runs()
-    return {"model": MODEL, "arch": ARCH, "layers_with_sweeps": sorted(runs),
+    return {"model": MODEL_ID, "arch": ARCH, "layers_with_sweeps": sorted(runs),
             "named_neurons": len(names()), "live_model": not NO_MODEL}
 
 
@@ -1288,6 +1292,9 @@ def agent_prompt_file():
         if os.path.exists(extra):
             text = text.rstrip() + "\n\n" + open(extra).read()
     text = text.replace("{ROOT}", ROOT)
+    for k, v in {"{MODEL}": MODEL_ID, "{N_LAYERS}": ARCH["n_layers"], "{N_NEURONS}": ARCH["inter"], "{HIDDEN}": ARCH["hidden"],
+                 "{PYTHON}": sys.executable.replace("\\", "/")}.items():
+        text = text.replace(k, str(v))
     out = os.path.join(AGENT_DIR, "system_prompt.md")
     if not os.path.exists(out) or open(out).read() != text:
         if os.path.exists(out):
@@ -1301,6 +1308,15 @@ def agent_prompt_file():
 async def _stop_turn(proc):
     import signal
     if proc is None or proc.returncode is not None:
+        return
+    if os.name == "nt":  # no process groups: end the whole tree (MCP server, shell scripts) with taskkill
+        tk = await asyncio.create_subprocess_exec("taskkill", "/F", "/T", "/PID", str(proc.pid),
+                                                  stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+        await tk.wait()
+        try:
+            await asyncio.wait_for(proc.wait(), 5)
+        except asyncio.TimeoutError:
+            pass
         return
     for sig in (signal.SIGTERM, signal.SIGKILL):
         try:
@@ -1361,7 +1377,7 @@ def _shown_text(t):
     return re.sub(r"^\[The person has [^\]]*\]\n\n", "", t)
 
 
-AGENT_SESSIONS = os.path.join(os.path.expanduser("~/.claude/projects"), AGENT_DIR.replace("/", "-").replace(".", "-"))
+AGENT_SESSIONS = os.path.join(os.path.expanduser("~/.claude/projects"), re.sub(r"[^A-Za-z0-9]", "-", AGENT_DIR))
 _chat_list = {}  # path -> (mtime, summary)
 
 
@@ -1497,8 +1513,10 @@ CHAT_IDLE = 30 * 60  # seconds without listeners or turns before a chat's input 
 
 def _claude_cmd(cid):
     mcp = {"mcpServers": {"explorer": {"command": sys.executable, "args": [os.path.join(ROOT, "explorer", "agent_mcp.py")],
-                                       "env": {"EXPLORER_URL": f"http://127.0.0.1:{PORT}", "EXPLORER_CHAT": cid, **NEURONARY_ENV}}}}
-    cmd = ["claude", "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
+                                       "env": {"EXPLORER_URL": f"http://127.0.0.1:{PORT}", "EXPLORER_CHAT": cid, "EXPLORER_MODEL": MODEL_ID,
+                                               "PYTHONUTF8": "1", **NEURONARY_ENV}}}}
+    # shutil.which finds claude.exe / claude.cmd on Windows, where a bare name isn't resolved
+    cmd = [shutil.which("claude") or "claude", "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
            "--system-prompt-file", agent_prompt_file(), "--mcp-config", json.dumps(mcp), "--strict-mcp-config",
            # file tools and a shell, so it can run scripts against this server (e.g. score a file it shouldn't read)
            "--tools", *FILE_TOOLS, "--allowedTools", "mcp__explorer", *FILE_TOOLS,
@@ -1727,7 +1745,7 @@ async def _ensure_codex(c):
         return proc
     os.makedirs(AGENT_DIR, exist_ok=True)
     env = {**os.environ, "CODEX_HOME": _codex_home()}
-    proc = c["proc"] = await asyncio.create_subprocess_exec("codex", "app-server", cwd=AGENT_DIR, env=env, stdin=asyncio.subprocess.PIPE,
+    proc = c["proc"] = await asyncio.create_subprocess_exec(shutil.which("codex") or "codex", "app-server", cwd=AGENT_DIR, env=env, stdin=asyncio.subprocess.PIPE,
                                                             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
                                                             limit=1 << 24, start_new_session=True)
     c["rpc"] = {"next": 0, "pending": {}}

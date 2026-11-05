@@ -20,14 +20,16 @@ import torch
 from huggingface_hub import snapshot_download
 from safetensors import safe_open
 
+from paths import CACHE, MODEL
+
 ap = argparse.ArgumentParser()
-ap.add_argument("--model", default="Qwen/Qwen3.5-4B")
+ap.add_argument("--model", default=MODEL)
 ap.add_argument("--k", type=int, default=24)
-ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "connections.npz"))
+ap.add_argument("--out", default=os.path.join(CACHE, "connections.npz"))
 a = ap.parse_args()
 dev = "cuda" if torch.cuda.is_available() else "mps"
 
-root = snapshot_download(a.model, allow_patterns=["*.safetensors", "*.json"])
+root = a.model if os.path.isdir(a.model) else snapshot_download(a.model, allow_patterns=["*.safetensors", "*.json"])
 index = json.load(open(os.path.join(root, "model.safetensors.index.json")))["weight_map"]
 cfg = json.load(open(os.path.join(root, "config.json")))["text_config"]
 L, N, K = cfg["num_hidden_layers"], cfg["intermediate_size"], a.k

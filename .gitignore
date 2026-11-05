@@ -33,3 +33,15 @@ explorer/cache/rjpp/
 explorer/cache/jlens/
 explorer/cache/ffw/
 explorer/cache/slens/
+
+# downloaded model weights (EXPLORER_MODEL local folders)
+/models/
+
+# per-model caches: rebuilt or copied on first use
+explorer/cache/models/*/connections.sqlite
+explorer/cache/models/*/head_profiles.json
+explorer/cache/models/*/vocab.json
+explorer/names.*.json
+
+# cache build logs
+build_cache_*.log

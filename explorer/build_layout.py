@@ -16,19 +16,20 @@ import umap
 from huggingface_hub import snapshot_download
 from safetensors import safe_open
 
+from paths import CACHE, MODEL
+
 ap = argparse.ArgumentParser()
-ap.add_argument("--model", default="Qwen/Qwen3.5-4B")
+ap.add_argument("--model", default=MODEL)
 ap.add_argument("--kind", default="writes", choices=["writes", "reads"])
 ap.add_argument("--pca", type=int, default=50)
 ap.add_argument("--neighbors", type=int, default=30)
 a = ap.parse_args()
 
-root = snapshot_download(a.model, allow_patterns=["*.safetensors", "*.json"])
+root = a.model if os.path.isdir(a.model) else snapshot_download(a.model, allow_patterns=["*.safetensors", "*.json"])
 index = json.load(open(os.path.join(root, "model.safetensors.index.json")))["weight_map"]
 cfg = json.load(open(os.path.join(root, "config.json")))["text_config"]
 L, N = cfg["num_hidden_layers"], cfg["intermediate_size"]
-side = int(round(N ** 0.5))
-assert side * side == N
+side = int(np.ceil(N ** 0.5))  # as map3d.js: square sheet, last row partly empty when N is not a square
 
 
 def tensor(name):
@@ -49,12 +50,12 @@ for l in range(L):
     Z = U[:, : a.pca] * S[: a.pca]
     xy = umap.UMAP(n_neighbors=a.neighbors, min_dist=0.05, metric="cosine", random_state=0).fit_transform(Z)
     by_y = np.argsort(xy[:, 1], kind="stable")
-    for r in range(side):
+    for r in range(-(-N // side)):
         band = by_y[r * side:(r + 1) * side]
         band = band[np.argsort(xy[band, 0], kind="stable")]
-        cells[l, band] = r * side + np.arange(side)
+        cells[l, band] = r * side + np.arange(len(band))  # the last row is partial when N is not a square
     print(f"L{l} done", flush=True)
 
-out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", f"layout_{a.kind}.npz")
+out = os.path.join(CACHE, f"layout_{a.kind}.npz")
 np.savez(out, cell=cells)
 print("->", out)

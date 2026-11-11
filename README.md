@@ -41,6 +41,15 @@ The R and J++ lens rows read the maps of [bubskee/qwen3.5-4b-r-jpp-lenses](https
 
 ## Sweep
 
+Decode regression checks (no pretrained weights):
+
+    uv run python -m unittest discover -s tests -v
+    uv run python tests/check_cuda_parity.py  # tiny random hybrid Qwen model; skips without CUDA
+
+The CUDA check compares six decode steps, including graph replay, against eager decoding. It is a correctness
+smoke check, not a full-model throughput benchmark. On Windows, install a CUDA-enabled PyTorch wheel separately
+if your environment currently has a CPU-only build.
+
 Runs on a CUDA 13 GPU pod with the steering fork of vLLM ([RhizoNymph/vllm](https://github.com/RhizoNymph/vllm)).
 
     bash sweep/setup_pod.sh                                   # fork, deps, model; writes /workspace/env.sh

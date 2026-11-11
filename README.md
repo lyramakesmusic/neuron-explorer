@@ -10,6 +10,9 @@ rollout is kept, and the explorer lays the results out over a 3D view of the mod
     uv sync
     uv run python explorer/server.py        # http://localhost:8791
 
+On Windows, `uv sync` installs PyTorch from the CUDA 13.0 wheel index. The server starts in UTF-8 mode, and the
+agent uses the same Python interpreter as the server (including `.venv/Scripts/python.exe`).
+
 Reads sweep runs from `runs/` and per-layer stats from `stats/`, both produced by the sweep below; the caches in
 `explorer/cache/` ship with the repo. Loads Qwen3.5-4B locally (MPS, CUDA or CPU) for live
 steered chat, lens, connections and live inference over your own text.

@@ -28,6 +28,9 @@ The R and J++ lens rows read the maps of [bubskee/qwen3.5-4b-r-jpp-lenses](https
   connections, a name, and where it fires on web text: its strongest FineFineWeb contexts per sign, each token shaded
   by the neuron's activation, and the domains it concentrates in.
 - **embeddings**: UMAP of a layer's rollouts, coloured by neuron, prompt, dose or kind.
+- **pins**: pin neurons at their current additive or multiplicative dose to steer them alongside the open neuron.
+  Pins persist in this browser; additive doses can be negative. Use **open ↗** beside the pins for a separate chat
+  with one response per turn, steered only by a snapshot of those pins. The usual neuron chat keeps its three rows.
 - **language**: the interface follows the browser language on first visit; the menu at the right of the header
   switches between English and Simplified Chinese (the choice is kept in this browser). Translations live in
   `explorer/static/i18n.js`.
@@ -39,6 +42,10 @@ The R and J++ lens rows read the maps of [bubskee/qwen3.5-4b-r-jpp-lenses](https
   `EXPLORER_CLAUDE_MODEL` picks the model. The server answers only pages and tools on this machine.
 
 ## Sweep
+
+Steering row regression checks (fixed logits, no model weights):
+
+    uv run python -m unittest discover -s tests -v
 
 Runs on a CUDA 13 GPU pod with the steering fork of vLLM ([RhizoNymph/vllm](https://github.com/RhizoNymph/vllm)).
 

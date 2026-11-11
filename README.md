@@ -42,7 +42,8 @@ The R and J++ lens rows read the maps of [bubskee/qwen3.5-4b-r-jpp-lenses](https
   live model (steering, activations, next-token logprobs, ablations), moves the map, list and highlights, and has file
   tools and a shell in your home folder. Its prompt is `explorer/agent_prompt.md` plus `explorer/agent_methodology.md`, and
   `explorer/agent_prompt.local.md` when present (untracked, for your own additions);
-  `EXPLORER_CLAUDE_MODEL` picks the model. The server answers only pages and tools on this machine.
+  `EXPLORER_CLAUDE_MODEL` picks the model. The server is local-only by default; setting `EXPLORER_HOST` also grants
+  access through that address, including the agent's file and shell tools.
 
 ## Sweep
 

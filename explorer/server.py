@@ -1938,7 +1938,7 @@ if __name__ == "__main__":
     else:  # loopback too: the agent's MCP server and local pages keep using 127.0.0.1
         import socket
         socks = []
-        for h in ("127.0.0.1", HOST):
+        for h in dict.fromkeys(("127.0.0.1", HOST)):
             s = socket.socket(socket.AF_INET6 if ":" in h else socket.AF_INET)
             s.bind((h, PORT))
             socks.append(s)

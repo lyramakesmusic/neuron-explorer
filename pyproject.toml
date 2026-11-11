@@ -13,4 +13,7 @@ dependencies = [
     "uvicorn>=0.54.0",
     "sentence-transformers>=6.1.0",
     "umap-learn>=0.5.12",
+    # Triton kernels for the linear-attention (Gated DeltaNet) layers; transformers uses them only under CUDA
+    "flash-linear-attention>=0.6.0",
+    "triton-windows>=3.8.0.post29 ; sys_platform == 'win32'",
 ]

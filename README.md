@@ -12,7 +12,8 @@ rollout is kept, and the explorer lays the results out over a 3D view of the mod
 
 Reads sweep runs from `runs/` and per-layer stats from `stats/`, both produced by the sweep below; the caches in
 `explorer/cache/` ship with the repo. Loads Qwen3.5-4B locally (MPS, CUDA or CPU) for live
-steered chat, lens, connections and live inference over your own text.
+steered chat, lens, connections and live inference over your own text. Under CUDA, steered decoding replays each token
+from a CUDA graph (`EXPLORER_CUDA_GRAPHS=0` turns it off).
 
 The R and J++ lens rows read the maps of [bubskee/qwen3.5-4b-r-jpp-lenses](https://huggingface.co/bubskee/qwen3.5-4b-r-jpp-lenses)
 (Apache-2.0):
@@ -39,6 +40,15 @@ The R and J++ lens rows read the maps of [bubskee/qwen3.5-4b-r-jpp-lenses](https
   `EXPLORER_CLAUDE_MODEL` picks the model. The server answers only pages and tools on this machine.
 
 ## Sweep
+
+Decode regression checks (no pretrained weights):
+
+    uv run python -m unittest discover -s tests -v
+    uv run python tests/check_cuda_parity.py  # tiny random hybrid Qwen model; skips without CUDA
+
+The CUDA check compares six decode steps, including graph replay, against eager decoding. It is a correctness
+smoke check, not a full-model throughput benchmark. On Windows, install a CUDA-enabled PyTorch wheel separately
+if your environment currently has a CPU-only build.
 
 Runs on a CUDA 13 GPU pod with the steering fork of vLLM ([RhizoNymph/vllm](https://github.com/RhizoNymph/vllm)).
 

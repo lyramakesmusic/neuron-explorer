@@ -405,6 +405,15 @@ wheels = [
 ]
 
 [[package]]
+name = "einops"
+version = "0.8.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/2c/77/850bef8d72ffb9219f0b1aac23fbc1bf7d038ee6ea666f331fa273031aa2/einops-0.8.2.tar.gz", hash = "sha256:609da665570e5e265e27283aab09e7f279ade90c4f01bcfca111f3d3e13f2827", size = 56261, upload-time = "2026-01-26T04:13:17.638Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2a/09/f8d8f8f31e4483c10a906437b4ce31bdf3d6d417b73fe33f1a8b59e34228/einops-0.8.2-py3-none-any.whl", hash = "sha256:54058201ac7087911181bfec4af6091bb59380360f069276601256a76af08193", size = 65638, upload-time = "2026-01-26T04:13:18.546Z" },
+]
+
+[[package]]
 name = "fastapi"
 version = "0.146.0"
 source = { registry = "https://pypi.org/simple" }
@@ -428,6 +437,31 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d4/08/d8f81287742010e38daf3632380c8d80ede7b4df2716f8ca3d0a2b087d44/filelock-4.2.2.tar.gz", hash = "sha256:b29ff2ae9140bb17b3bc77c648dc4f010d9ac0955eccabff4f2b01dde859f787", size = 651339, upload-time = "2026-10-18T07:26:44.624Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/4e/53/35698fff350cb99c49ee01ae5cb1eb4408567792a286314ea984b53b5002/filelock-4.2.2-py3-none-any.whl", hash = "sha256:1851d2f14ca2901e98069d68333b33ad7409f56904e17b48cc0c32a0db8ed73a", size = 162415, upload-time = "2026-10-18T07:26:43.115Z" },
+]
+
+[[package]]
+name = "fla-core"
+version = "0.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "einops" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/49/2d/3181d715d021c12db379ce0bc51ba78c5b6282ff6c3c79cc2f64d183d1b2/fla_core-0.6.0.tar.gz", hash = "sha256:cdd5b7ff6d5c0e5c08fde73f2624d76e0b506f8684af4e316bc7f2d8bfd9a623", size = 775665, upload-time = "2026-10-23T17:48:03.213Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/23/08/a1a16725117cddded90bb11afed4b31f23d97f7f554775e66af998818ef9/fla_core-0.6.0-py3-none-any.whl", hash = "sha256:b0708b70e0b119cd58a0a5146ea56cb175cef6ed969d8ac60267e3e077ce3ebd", size = 1085221, upload-time = "2026-10-23T17:48:00.23Z" },
+]
+
+[[package]]
+name = "flash-linear-attention"
+version = "0.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "fla-core" },
+    { name = "transformers" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/86/2f/6e07920d032e97fcc1a09d7578a7aa595b7dece535280bd712bb7077a3fa/flash_linear_attention-0.6.0.tar.gz", hash = "sha256:4110ff0f94ca54b76fc5499f0c169f5cbd44738d875e0199adc3a11ab0e241fa", size = 222155, upload-time = "2026-10-23T17:48:04.341Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3c/c1/ad271e49528b06c7032c35e6dca85592f96ef8390e6ce1b803d6b23eae0a/flash_linear_attention-0.6.0-py3-none-any.whl", hash = "sha256:6dec9735f8454523c13553622e98aff30152dde6586b4ac7d88010fbb7a06b5f", size = 403549, upload-time = "2026-10-23T17:48:01.882Z" },
 ]
 
 [[package]]
@@ -1086,12 +1120,14 @@ dependencies = [
     { name = "accelerate" },
     { name = "datasets" },
     { name = "fastapi" },
+    { name = "flash-linear-attention" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "safetensors" },
     { name = "sentence-transformers" },
     { name = "torch" },
     { name = "transformers" },
+    { name = "triton-windows", marker = "sys_platform == 'win32'" },
     { name = "umap-learn" },
     { name = "uvicorn" },
 ]
@@ -1101,11 +1137,13 @@ requires-dist = [
     { name = "accelerate" },
     { name = "datasets" },
     { name = "fastapi", specifier = ">=0.146.0" },
+    { name = "flash-linear-attention", specifier = ">=0.6.0" },
     { name = "numpy" },
     { name = "safetensors" },
     { name = "sentence-transformers", specifier = ">=6.1.0" },
     { name = "torch" },
     { name = "transformers" },
+    { name = "triton-windows", marker = "sys_platform == 'win32'", specifier = ">=3.8.0.post29" },
     { name = "umap-learn", specifier = ">=0.5.12" },
     { name = "uvicorn", specifier = ">=0.54.0" },
 ]
@@ -2593,6 +2631,21 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/93/d9/08c75f3459f19ad00425b564058e40efa4bcd79b816064cf27499303ea42/triton-3.8.0-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:387dae4cb0089a7b6ba1a428ae0782b65c4c58f57d94617cb22ca8593d8ccbca", size = 247972313, upload-time = "2026-08-28T15:56:14.007Z" },
     { url = "https://files.pythonhosted.org/packages/7c/34/429c5592181cfb7361a0a8e0bff218e7224b726709d75da2472b3e819f70/triton-3.8.0-cp314-cp314t-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:1b84e7d512490ba529111260fa6f7cad8b254a6bb5fbdf41d5ef9a5e57f52d0a", size = 226591133, upload-time = "2026-08-28T16:09:02.271Z" },
     { url = "https://files.pythonhosted.org/packages/fe/d1/aa8a3e935c37efee7945984fdb64d7e0851bf6d920afd97b2d21f9d23360/triton-3.8.0-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:74217bb56ed8692759227758e4c4b3bd2d608a209c1a7a081bf361fb4c2c1bf9", size = 248077577, upload-time = "2026-08-28T15:56:24.94Z" },
+]
+
+[[package]]
+name = "triton-windows"
+version = "3.8.0.post29"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/73/60/9cc48b94e426a4e880680b1f352fc5725160a3f450c6c1fb69eb4aa32dbe/triton_windows-3.8.0.post29-cp311-cp311-win_amd64.whl", hash = "sha256:0e12f038862c8ff6823466573c2ae3b8e58a4570470dd129ac0720832f464b22", size = 52808034, upload-time = "2026-09-28T21:58:21.133Z" },
+    { url = "https://files.pythonhosted.org/packages/bb/26/9458c2d33d79bb21b51cf7b584b39c86bf09d060ea9ca570a80b48753f63/triton_windows-3.8.0.post29-cp311-cp311-win_arm64.whl", hash = "sha256:d50e511f41bb9308a278e37d7d9fe2d1eb834c6dbf2807bd3fc287c473d24793", size = 48395137, upload-time = "2026-09-28T21:58:27.688Z" },
+    { url = "https://files.pythonhosted.org/packages/ec/bc/b027bba13beb00cd4993a33b7fa89a84ef3a42ecd05d8a0e346526a7dc80/triton_windows-3.8.0.post29-cp312-cp312-win_amd64.whl", hash = "sha256:937ba2ee53b6e664709898537de3eb9eab427a498c04da58f2bd42e1af93e298", size = 52810080, upload-time = "2026-09-28T21:58:35.034Z" },
+    { url = "https://files.pythonhosted.org/packages/89/54/a450dc8f9daf8df9d86630b1feffc9f19a14d5474f507657a22505a41343/triton_windows-3.8.0.post29-cp312-cp312-win_arm64.whl", hash = "sha256:525bc89392c08d6d8531407e0c4f5b1dff35d9a484647b6e5af616a004dd9d5e", size = 48390313, upload-time = "2026-09-28T21:58:42.016Z" },
+    { url = "https://files.pythonhosted.org/packages/0d/8c/c06f27ecbd3566d3141eba6044bf29d8618e01740e49af27169dff217a0a/triton_windows-3.8.0.post29-cp313-cp313-win_amd64.whl", hash = "sha256:afb9bdbfae16fd9ac1450d2250f25c2ef0511384bf5354eb32e23e706978bf1e", size = 52810237, upload-time = "2026-09-28T21:58:49.062Z" },
+    { url = "https://files.pythonhosted.org/packages/c6/ae/8d9baa6eb51d5b29a7a9e5bbc17df027a7ec66c013d9d19c373bd0bf9f4b/triton_windows-3.8.0.post29-cp313-cp313-win_arm64.whl", hash = "sha256:52dba08290cec7be6bdbf4915f1e2797c1e56a1c433416a8308e1f262e175eb8", size = 48389382, upload-time = "2026-09-28T21:58:56.206Z" },
+    { url = "https://files.pythonhosted.org/packages/0c/3c/6be3de0febab8f0708b32377c59d6f963a492622ce79762ec08ddc7496a8/triton_windows-3.8.0.post29-cp314-cp314-win_amd64.whl", hash = "sha256:1d0fd6a6cf36ba5cced997177068e328d015e42cd4300f6995fff5a6f8707aff", size = 54097540, upload-time = "2026-09-28T21:59:03.5Z" },
+    { url = "https://files.pythonhosted.org/packages/01/ee/4e293741678fa6da4e7af016e60d60dc5bc0b11e9c80d4a38b5445b01f89/triton_windows-3.8.0.post29-cp314-cp314-win_arm64.whl", hash = "sha256:4e39f736c46fe23330d80b0f81fd983e3d23756a477ade40b2c65e2510195434", size = 49565282, upload-time = "2026-09-28T21:59:10.387Z" },
 ]
 
 [[package]]

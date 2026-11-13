@@ -44,9 +44,10 @@ The R and J++ lens rows read the maps of [bubskee/qwen3.5-4b-r-jpp-lenses](https
     `DEEPSEEK_API_KEY` environment variable, else from `refs.DEEPSEEK_API_KEY` in `~/.dsh/.credentials.yaml`, and is
     passed only in the child process's environment: neither the profile nor its generated patch contains it. One
     `dsh --json` process runs per turn; the chat's session id is resumed on later turns, and a message sent mid-turn
-    waits for the current reply. `EXPLORER_DSH` overrides the binary path. By default the run approves no prompts and
-    can write in the explorer checkout and the home folder, like the Claude and Codex agents; set
-    `EXPLORER_DSH_PERMISSION_MODE` to pick another DSH preset (for example `workspace-write` for a tighter sandbox).
+    waits for the current reply. `EXPLORER_DSH` overrides the binary path. The run defaults to the `workspace-write`
+    preset with `--approval-policy never`, adding the explorer checkout and the home folder as writable roots, so it
+    writes like the Claude and Codex agents without prompting. Set `EXPLORER_DSH_PERMISSION_MODE` to another DSH
+    preset (for example `read-only`) to tighten the sandbox; only `workspace-write` adds those approval and root flags.
 
   The server answers only pages and tools on this machine.
 

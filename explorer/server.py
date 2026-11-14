@@ -2057,6 +2057,7 @@ async def _dsh_start(c, item):
 async def _dsh_pump(c, proc):
     """Map DSH's NDJSON run events to the explorer's chat events until the process exits."""
     done = False
+    reported = False  # a structured error already reached the UI: don't follow it with the stderr tail
     last_text = False
     err_task = asyncio.create_task(proc.stderr.read())
     try:
@@ -2093,6 +2094,12 @@ async def _dsh_pump(c, proc):
                 _emit(c, {"t": "tool_result", "id": m.get("callId"),
                           "error": m.get("status") not in (None, "completed", "success"),
                           "output": out[:1500] + (f" … ({len(out)} chars)" if len(out) > 1500 else "")})
+            elif t == "error":
+                # `--json` reports a startup or driver failure as this event and then exits; its message is the one to
+                # show, not the stderr tail (which carries unrelated warnings).
+                last_text = False
+                _emit(c, {"t": "error", "error": str(m.get("message") or "DSH error")[:600]})
+                reported = True
             elif t == "final":
                 reason = m.get("reason") or {}
                 if reason.get("kind") != "completed":
@@ -2118,7 +2125,7 @@ async def _dsh_pump(c, proc):
             c["proc"] = None
             c["busy"] = False
             if not done:
-                if not c.get("stopping"):
+                if not c.get("stopping") and not reported:
                     _emit(c, {"t": "error", "error": err_text.strip()[-600:] or f"dsh exited {code}"})
                 _emit(c, {"t": "done"})
                 c["turn"] = []

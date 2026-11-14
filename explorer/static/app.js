@@ -1,6 +1,6 @@
 import { createMap } from "./map3d.js?v=78";
 import { createScatter } from "./scatter.js?v=39";
-import { t, tp, initI18n, applyTranslations, getLang, localizeError } from "./i18n.js?v=5";
+import { t, tp, initI18n, applyTranslations, getLang, localizeError } from "./i18n.js?v=6";
 
 const $ = s => document.querySelector(s);
 const api = async (p, body) => {
@@ -1021,6 +1021,7 @@ const updateErrKey = code => ({
   "update.dirty": "update.dirty",
   "update.diverged": "update.diverged",
   "update.deps_failed": "update.depsFailed",
+  "update.busy": "update.busy",
   "update.git_missing": "update.gitMissing",
   "update.timeout": "update.timeout",
   "update.git_failed": "update.gitFailed",
@@ -1172,7 +1173,7 @@ document.addEventListener("i18nchange", () => {
     const btn = $("#update-check");
     if (btn) btn.title = tp("update.available", updateInfo.count || 1, { n: updateInfo.count || 1 });
   }
-  if (!updateOverlay) return;
+  if (!updateOverlay || updateBusy) return;  // never rebuild mid-apply: it would drop the status and re-enable Apply
   if (updateInfo && updateInfo.available) openUpdateDialog(updateInfo);
   else closeUpdateDialog();
 });

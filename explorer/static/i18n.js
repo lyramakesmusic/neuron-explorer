@@ -230,6 +230,7 @@ const en = {
   "update.applyFailed": "Applying the update failed: {error}",
   "update.depsWarning": "Code updated, but dependency sync failed: {error}",
   "update.depsFailed": "Dependency sync failed; the update was rolled back: {error}",
+  "update.busy": "Another update is already running; wait for it to finish.",
 
   "status.other": "{raw}",
 
@@ -477,6 +478,7 @@ const zh = {
   "update.applyFailed": "应用更新失败：{error}",
   "update.depsWarning": "代码已更新，但依赖同步失败：{error}",
   "update.depsFailed": "依赖同步失败，已回滚到旧版本：{error}",
+  "update.busy": "另一个更新正在进行，请等它完成。",
 
   "status.other": "状态：{raw}",
 

@@ -14,6 +14,7 @@ The server exposes the same two operations through /api/update/check and
 import os
 import shutil
 import subprocess
+import threading
 
 ROOT = os.path.abspath(os.environ.get("EXPLORER_ROOT") or os.path.join(os.path.dirname(__file__), ".."))
 UPSTREAM = os.environ.get("EXPLORER_UPSTREAM", "https://github.com/lyramakesmusic/neuron-explorer.git")
@@ -122,27 +123,37 @@ def _sync_deps():
     return True, ""
 
 
+# One apply at a time: two of them can roll each other back.  The second one's dependency sync may fail after the
+# first one fast-forwarded, and its rollback restores the commit it saw before, undoing a successful update.
+_APPLY_LOCK = threading.Lock()
+
+
 def apply_update():
     """Fast-forward to upstream and reconcile dependencies.  Refuses to touch a dirty tree."""
-    info = check()
-    if not info["available"]:
-        return {"ok": True, "up_to_date": True, "commit": info["current"], "restart_required": False}
-    if info["dirty"]:
-        raise UpdateError("update.dirty",
-                          "the working tree has changes; commit or stash them before updating: " +
-                          ", ".join(info["dirty"][:5]))
-    if not info["fast_forward"]:
-        raise UpdateError("update.diverged",
-                          "local commits diverged from %s/%s; merge or rebase manually" % (UPSTREAM, BRANCH))
-    p = _run(["merge", "--ff-only", REF], timeout=180, check=False)
-    if p.returncode != 0:
-        raise UpdateError("update.apply_failed", (p.stderr or p.stdout).strip()[-800:])
-    commit = _sha("HEAD")
-    deps_ok, deps_error = _sync_deps()
-    if not deps_ok:
-        # Keep the old code runnable: restore the pre-update commit and report the dependency failure.
-        _run(["reset", "--hard", info["current"]], check=False)
-        raise UpdateError("update.deps_failed",
-                          deps_error or "dependency sync failed; the update was rolled back")
-    return {"ok": True, "up_to_date": False, "commit": commit, "previous": info["current"],
-            "restart_required": True, "deps_ok": True, "deps_error": ""}
+    if not _APPLY_LOCK.acquire(blocking=False):
+        raise UpdateError("update.busy", "another update is already running; wait for it to finish")
+    try:
+        info = check()
+        if not info["available"]:
+            return {"ok": True, "up_to_date": True, "commit": info["current"], "restart_required": False}
+        if info["dirty"]:
+            raise UpdateError("update.dirty",
+                              "the working tree has changes; commit or stash them before updating: " +
+                              ", ".join(info["dirty"][:5]))
+        if not info["fast_forward"]:
+            raise UpdateError("update.diverged",
+                              "local commits diverged from %s/%s; merge or rebase manually" % (UPSTREAM, BRANCH))
+        p = _run(["merge", "--ff-only", REF], timeout=180, check=False)
+        if p.returncode != 0:
+            raise UpdateError("update.apply_failed", (p.stderr or p.stdout).strip()[-800:])
+        commit = _sha("HEAD")
+        deps_ok, deps_error = _sync_deps()
+        if not deps_ok:
+            # Keep the old code runnable: restore the pre-update commit and report the dependency failure.
+            _run(["reset", "--hard", info["current"]], check=False)
+            raise UpdateError("update.deps_failed",
+                              deps_error or "dependency sync failed; the update was rolled back")
+        return {"ok": True, "up_to_date": False, "commit": commit, "previous": info["current"],
+                "restart_required": True, "deps_ok": True, "deps_error": ""}
+    finally:
+        _APPLY_LOCK.release()
